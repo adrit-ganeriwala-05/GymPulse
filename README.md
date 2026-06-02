@@ -18,7 +18,7 @@ A clean, minimal workout tracking app built with Flutter.
 - **flutter_bloc** — state management
 - **get_it** — dependency injection
 - **go_router** — navigation
-- **sqflite** — local SQLite database
+- **sqlite** — local SQLite database
 - **shared_preferences** — lightweight persistent storage
 - **table_calendar** — calendar widget
 - **google_fonts** — Playfair Display + DM Sans typography
