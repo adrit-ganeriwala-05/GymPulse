@@ -45,7 +45,3 @@ cd gympulse
 flutter pub get
 flutter run
 ```
-
-## Platforms
-
-Supports Android, iOS, macOS, Web, Windows, and Linux.
