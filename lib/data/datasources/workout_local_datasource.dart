@@ -7,18 +7,26 @@ import 'workout_database.dart';
 
 abstract class WorkoutLocalDatasource {
   /// Inserts or fully replaces the workout row and all its children.
-  Future<void> upsertWorkout(WorkoutModel workout, {required String status});
+  Future<void> upsertWorkout(
+    WorkoutModel workout, {
+    required String status,
+    bool timerPaused = false,
+  });
 
   /// Finished workouts only, newest first.
   Future<List<WorkoutModel>> getWorkouts();
 
-  /// The single in-progress draft, if any.
-  Future<WorkoutModel?> getDraft();
+  /// The single in-progress draft, if any, with its paused flag.
+  Future<({WorkoutModel workout, bool timerPaused})?> getDraft();
 
   Future<void> deleteWorkout(String id);
 
-  /// Single-column UPDATE of the draft's stopwatch reading.
-  Future<void> updateDraftElapsed(String id, int elapsedSeconds);
+  /// Narrow UPDATE of the draft's stopwatch reading and paused flag.
+  Future<void> updateDraftElapsed(
+    String id,
+    int elapsedSeconds, {
+    required bool paused,
+  });
 }
 
 class WorkoutLocalDatasourceImpl implements WorkoutLocalDatasource {
@@ -31,6 +39,7 @@ class WorkoutLocalDatasourceImpl implements WorkoutLocalDatasource {
   Future<void> upsertWorkout(
     WorkoutModel workout, {
     required String status,
+    bool timerPaused = false,
   }) async {
     final db = await _db;
 
@@ -46,6 +55,7 @@ class WorkoutLocalDatasourceImpl implements WorkoutLocalDatasource {
           'date': workout.date.toIso8601String(),
           'duration_seconds': workout.durationSeconds,
           'status': status,
+          'timer_paused': timerPaused ? 1 : 0,
         },
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
@@ -88,7 +98,7 @@ class WorkoutLocalDatasourceImpl implements WorkoutLocalDatasource {
   }
 
   @override
-  Future<WorkoutModel?> getDraft() async {
+  Future<({WorkoutModel workout, bool timerPaused})?> getDraft() async {
     final db = await _db;
     final rows = await db.query(
       'workouts',
@@ -97,16 +107,24 @@ class WorkoutLocalDatasourceImpl implements WorkoutLocalDatasource {
       orderBy: 'date DESC',
       limit: 1,
     );
+    if (rows.isEmpty) return null;
     final drafts = await _hydrate(db, rows);
-    return drafts.isEmpty ? null : drafts.first;
+    return (
+      workout: drafts.first,
+      timerPaused: (rows.first['timer_paused'] as int? ?? 0) == 1,
+    );
   }
 
   @override
-  Future<void> updateDraftElapsed(String id, int elapsedSeconds) async {
+  Future<void> updateDraftElapsed(
+    String id,
+    int elapsedSeconds, {
+    required bool paused,
+  }) async {
     final db = await _db;
     await db.update(
       'workouts',
-      {'duration_seconds': elapsedSeconds},
+      {'duration_seconds': elapsedSeconds, 'timer_paused': paused ? 1 : 0},
       where: 'id = ? AND status = ?',
       whereArgs: [id, statusDraft],
     );

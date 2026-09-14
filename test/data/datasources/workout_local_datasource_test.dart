@@ -85,7 +85,7 @@ void main() {
     await ds.upsertWorkout(sample(id: 'd1'), status: 'draft');
     await ds.upsertWorkout(sample(id: 'w1'), status: 'done');
     expect((await ds.getWorkouts()).map((w) => w.id), ['w1']);
-    expect((await ds.getDraft())?.id, 'd1');
+    expect((await ds.getDraft())?.workout.id, 'd1');
   });
 
   test('an open draft is invisible to every aggregate', () async {
@@ -106,15 +106,25 @@ void main() {
     expect(mostRecentDay(visible).single.id, 'done');
   });
 
-  test('updateDraftElapsed touches only the draft duration', () async {
+  test('updateDraftElapsed touches only the draft duration + paused flag', () async {
     final ds = WorkoutLocalDatasourceImpl();
     await ds.upsertWorkout(sample(id: 'd'), status: 'draft');
-    await ds.updateDraftElapsed('d', 754);
-    expect((await ds.getDraft())!.durationSeconds, 754);
-    expect((await ds.getDraft())!.exercises, hasLength(2), reason: 'children untouched');
+    await ds.updateDraftElapsed('d', 754, paused: true);
+    final d = (await ds.getDraft())!;
+    expect(d.workout.durationSeconds, 754);
+    expect(d.timerPaused, isTrue);
+    expect(d.workout.exercises, hasLength(2), reason: 'children untouched');
     await ds.upsertWorkout(sample(id: 'd'), status: 'done');
-    await ds.updateDraftElapsed('d', 999); // no longer a draft: no-op
+    await ds.updateDraftElapsed('d', 999, paused: false); // not a draft: no-op
     expect((await ds.getWorkouts()).single.durationSeconds, 5400);
+  });
+
+  test('paused flag round-trips through the full draft snapshot', () async {
+    final ds = WorkoutLocalDatasourceImpl();
+    await ds.upsertWorkout(sample(id: 'd'), status: 'draft', timerPaused: true);
+    expect((await ds.getDraft())!.timerPaused, isTrue);
+    await ds.upsertWorkout(sample(id: 'd'), status: 'draft');
+    expect((await ds.getDraft())!.timerPaused, isFalse);
   });
 
   test('finishing a draft flips it in place: no second row', () async {
@@ -153,6 +163,11 @@ void main() {
     // Opening through the app's WorkoutDatabase runs _onUpgrade.
     final db = await WorkoutDatabase.instance.database;
     expect(await db.getVersion(), WorkoutDatabase.schemaVersion);
+    final cols = (await db.rawQuery('PRAGMA table_info(workouts)'))
+        .map((r) => r['name'])
+        .toSet();
+    expect(cols, containsAll(['status', 'timer_paused']),
+        reason: 'both ladder steps applied in order');
     final all = await WorkoutLocalDatasourceImpl().getWorkouts();
     expect(all.map((w) => w.id), ['legacy']);
     expect(all.single.exercises.single.sets.single.weight, 40.0);

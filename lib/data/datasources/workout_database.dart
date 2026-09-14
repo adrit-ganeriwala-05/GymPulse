@@ -20,7 +20,7 @@ class WorkoutDatabase {
 
   /// Bump this when the schema changes and add a step to [_onUpgrade].
   /// [_createDB] must produce the same shape a fully-migrated DB has.
-  static const schemaVersion = 2;
+  static const schemaVersion = 3;
 
   Future<Database> _initDB(String filePath) async {
     final dbPath = await getDatabasesPath();
@@ -48,6 +48,12 @@ class WorkoutDatabase {
         "ALTER TABLE workouts ADD COLUMN status TEXT NOT NULL DEFAULT 'done'",
       );
     }
+    if (oldVersion < 3) {
+      // v3: was the draft's stopwatch paused at the last checkpoint?
+      await db.execute(
+        'ALTER TABLE workouts ADD COLUMN timer_paused INTEGER NOT NULL DEFAULT 0',
+      );
+    }
   }
 
   // onConfigure runs on every open, before onCreate/onUpgrade, and outside
@@ -63,7 +69,8 @@ class WorkoutDatabase {
         id TEXT PRIMARY KEY,
         date TEXT NOT NULL,
         duration_seconds INTEGER NOT NULL DEFAULT 0,
-        status TEXT NOT NULL DEFAULT 'done'   -- 'done' | 'draft' (v2)
+        status TEXT NOT NULL DEFAULT 'done',  -- 'done' | 'draft' (v2)
+        timer_paused INTEGER NOT NULL DEFAULT 0  -- draft stopwatch paused (v3)
       )
     ''');
 

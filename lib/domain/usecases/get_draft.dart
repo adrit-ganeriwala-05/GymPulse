@@ -1,4 +1,4 @@
-import '../entities/workout.dart';
+import '../entities/workout_draft.dart';
 import '../repositories/workout_repository.dart';
 
 class GetDraft {
@@ -6,5 +6,5 @@ class GetDraft {
 
   const GetDraft(this.repository);
 
-  Future<Workout?> call() => repository.getDraft();
+  Future<WorkoutDraft?> call() => repository.getDraft();
 }

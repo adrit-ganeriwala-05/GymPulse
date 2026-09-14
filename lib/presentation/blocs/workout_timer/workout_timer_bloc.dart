@@ -22,6 +22,10 @@ class WorkoutTimerBloc extends Bloc<WorkoutTimerEvent, WorkoutTimerState> {
     Emitter<WorkoutTimerState> emit,
   ) {
     _subscription?.cancel();
+    if (event.paused) {
+      emit(WorkoutTimerPausedState(event.from));
+      return;
+    }
     emit(WorkoutTimerRunningState(event.from));
     _subscription = Stream.periodic(
       const Duration(seconds: 1),

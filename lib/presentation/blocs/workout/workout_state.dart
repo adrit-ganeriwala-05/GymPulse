@@ -36,6 +36,10 @@ class WorkoutInProgressState extends WorkoutState {
   /// not read as a 72-hour workout.
   final int elapsedSeconds;
 
+  /// Stopwatch paused (or stopped) at the last checkpoint. Resume seeds the
+  /// timer into the paused state so no untrained time accrues.
+  final bool timerPaused;
+
   /// Non-null when editing an already-finished workout: mutations skip draft
   /// persistence and Finish updates in place without touching the streak.
   final Workout? editing;
@@ -45,6 +49,7 @@ class WorkoutInProgressState extends WorkoutState {
     required this.startedAt,
     required this.exercises,
     this.elapsedSeconds = 0,
+    this.timerPaused = false,
     this.editing,
   });
 
@@ -53,17 +58,20 @@ class WorkoutInProgressState extends WorkoutState {
   WorkoutInProgressState copyWith({
     List<Exercise>? exercises,
     int? elapsedSeconds,
+    bool? timerPaused,
   }) =>
       WorkoutInProgressState(
         id: id,
         startedAt: startedAt,
         exercises: exercises ?? this.exercises,
         elapsedSeconds: elapsedSeconds ?? this.elapsedSeconds,
+        timerPaused: timerPaused ?? this.timerPaused,
         editing: editing,
       );
 
   @override
-  List<Object?> get props => [id, startedAt, exercises, elapsedSeconds, editing];
+  List<Object?> get props =>
+      [id, startedAt, exercises, elapsedSeconds, timerPaused, editing];
 }
 
 class WorkoutCompleteState extends WorkoutState {

@@ -1,4 +1,5 @@
 import '../entities/workout.dart';
+import '../entities/workout_draft.dart';
 
 abstract class WorkoutRepository {
   /// Finished workouts only, newest first.
@@ -13,13 +14,17 @@ abstract class WorkoutRepository {
   Future<void> updateWorkout(Workout workout);
 
   /// Write-through snapshot of the in-progress session.
-  Future<void> saveDraft(Workout workout);
+  Future<void> saveDraft(WorkoutDraft draft);
 
-  Future<Workout?> getDraft();
+  Future<WorkoutDraft?> getDraft();
 
   Future<void> deleteWorkout(String id);
 
   /// Stopwatch reading for the open draft, so a resumed session continues
   /// from accumulated *active* time rather than wall-clock age.
-  Future<void> recordDraftElapsed(String draftId, int elapsedSeconds);
+  Future<void> recordDraftElapsed(
+    String draftId,
+    int elapsedSeconds, {
+    required bool paused,
+  });
 }

@@ -28,11 +28,12 @@ class WorkoutEditStarted extends WorkoutEvent {
 /// from accumulated active time.
 class WorkoutElapsedUpdated extends WorkoutEvent {
   final int seconds;
+  final bool paused;
 
-  const WorkoutElapsedUpdated(this.seconds);
+  const WorkoutElapsedUpdated(this.seconds, {this.paused = false});
 
   @override
-  List<Object?> get props => [seconds];
+  List<Object?> get props => [seconds, paused];
 }
 
 /// Abandon the current draft (deletes the persisted row).

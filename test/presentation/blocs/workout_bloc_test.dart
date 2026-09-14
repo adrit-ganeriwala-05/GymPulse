@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gympulse/domain/entities/exercise.dart';
 import 'package:gympulse/domain/entities/workout.dart';
+import 'package:gympulse/domain/entities/workout_draft.dart';
 import 'package:gympulse/domain/repositories/streak_repository.dart';
 import 'package:gympulse/domain/repositories/workout_repository.dart';
 import 'package:gympulse/domain/usecases/discard_draft.dart';
@@ -18,6 +19,7 @@ import 'package:gympulse/presentation/blocs/workout/workout_state.dart';
 class FakeWorkoutRepo implements WorkoutRepository {
   final done = <String, Workout>{};
   Workout? draft;
+  bool draftPaused = false;
   int saveCalls = 0, updateCalls = 0, draftWrites = 0;
   final elapsedWrites = <int>[];
   bool failSave = false;
@@ -37,20 +39,24 @@ class FakeWorkoutRepo implements WorkoutRepository {
     done[w.id] = w;
   }
   @override
-  Future<void> saveDraft(Workout w) async {
+  Future<void> saveDraft(WorkoutDraft d) async {
     draftWrites++;
-    draft = w;
+    draft = d.workout;
+    draftPaused = d.timerPaused;
   }
   @override
-  Future<Workout?> getDraft() async => draft;
+  Future<WorkoutDraft?> getDraft() async =>
+      draft == null ? null : WorkoutDraft(workout: draft!, timerPaused: draftPaused);
   @override
   Future<void> deleteWorkout(String id) async {
     if (draft?.id == id) draft = null;
     done.remove(id);
   }
   @override
-  Future<void> recordDraftElapsed(String draftId, int elapsedSeconds) async {
+  Future<void> recordDraftElapsed(String draftId, int elapsedSeconds,
+      {required bool paused}) async {
     elapsedWrites.add(elapsedSeconds);
+    draftPaused = paused;
     final d = draft;
     if (d != null && d.id == draftId) {
       draft = Workout(id: d.id, date: d.date, durationSeconds: elapsedSeconds, exercises: d.exercises);
@@ -188,6 +194,29 @@ void main() {
     await settle();
     final resumed = later.state as WorkoutInProgressState;
     expect(resumed.elapsedSeconds, 130);
+    await later.close();
+  });
+
+  test('paused at death → resumes paused with elapsed unchanged', () async {
+    bloc.add(const WorkoutStarted());
+    await settle();
+    bloc.add(const ExerciseAdded('Bench'));
+    bloc.add(const WorkoutElapsedUpdated(300, paused: true));
+    await settle();
+    expect(repo.draftPaused, isTrue);
+    expect(inProgress().timerPaused, isTrue);
+    // A later mutation snapshot must not lose the flag.
+    bloc.add(const SetLogged(exerciseName: 'Bench', reps: 5, weight: 60));
+    await settle();
+    expect(repo.draftPaused, isTrue);
+    expect(repo.draft!.durationSeconds, 300);
+
+    final later = make();
+    later.add(const WorkoutStarted());
+    await settle();
+    final resumed = later.state as WorkoutInProgressState;
+    expect(resumed.timerPaused, isTrue);
+    expect(resumed.elapsedSeconds, 300);
     await later.close();
   });
 

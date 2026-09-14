@@ -1,4 +1,4 @@
-import '../entities/workout.dart';
+import '../entities/workout_draft.dart';
 import '../repositories/workout_repository.dart';
 
 class SaveDraft {
@@ -6,5 +6,5 @@ class SaveDraft {
 
   const SaveDraft(this.repository);
 
-  Future<void> call(Workout workout) => repository.saveDraft(workout);
+  Future<void> call(WorkoutDraft draft) => repository.saveDraft(draft);
 }

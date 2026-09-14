@@ -8,6 +8,6 @@ class RecordDraftElapsed {
 
   const RecordDraftElapsed(this.repository);
 
-  Future<void> call(String draftId, int elapsedSeconds) =>
-      repository.recordDraftElapsed(draftId, elapsedSeconds);
+  Future<void> call(String draftId, int elapsedSeconds, {required bool paused}) =>
+      repository.recordDraftElapsed(draftId, elapsedSeconds, paused: paused);
 }

@@ -112,15 +112,21 @@ class _ActiveBody extends StatelessWidget {
         final s = state as WorkoutInProgressState;
         final from =
             s.isEditing ? s.editing!.durationSeconds : s.elapsedSeconds;
-        ctx.read<WorkoutTimerBloc>().add(WorkoutTimerStarted(from: from));
+        ctx.read<WorkoutTimerBloc>().add(WorkoutTimerStarted(
+          from: from,
+          paused: !s.isEditing && s.timerPaused,
+        ));
       },
       child: BlocListener<WorkoutTimerBloc, WorkoutTimerState>(
         // Checkpoint the stopwatch into the draft every 10 s and whenever it
         // pauses/stops, so a kill loses at most 10 s of active time.
+        // Also on the pause->running edge so the paused flag clears at once
+        // rather than at the next 10 s tick.
         listenWhen: (prev, cur) =>
             cur is WorkoutTimerPausedState ||
             cur is WorkoutTimerStoppedState ||
-            (cur is WorkoutTimerRunningState && cur.seconds % 10 == 0),
+            (cur is WorkoutTimerRunningState &&
+                (cur.seconds % 10 == 0 || prev is! WorkoutTimerRunningState)),
         listener: (ctx, state) {
           final seconds = switch (state) {
             WorkoutTimerRunningState s => s.seconds,
@@ -128,7 +134,12 @@ class _ActiveBody extends StatelessWidget {
             WorkoutTimerStoppedState s => s.seconds,
             _ => 0,
           };
-          ctx.read<WorkoutBloc>().add(WorkoutElapsedUpdated(seconds));
+          // Stopped is persisted as paused: on resume the user should not
+          // find the clock running again.
+          final paused = state is! WorkoutTimerRunningState;
+          ctx.read<WorkoutBloc>().add(
+                WorkoutElapsedUpdated(seconds, paused: paused),
+              );
         },
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),

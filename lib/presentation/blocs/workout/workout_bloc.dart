@@ -4,6 +4,7 @@ import 'package:uuid/uuid.dart';
 
 import '../../../domain/entities/exercise.dart';
 import '../../../domain/entities/workout.dart';
+import '../../../domain/entities/workout_draft.dart';
 import '../../../domain/usecases/discard_draft.dart';
 import '../../../domain/usecases/get_draft.dart';
 import '../../../domain/usecases/record_draft_elapsed.dart';
@@ -63,18 +64,20 @@ class WorkoutBloc extends Bloc<WorkoutEvent, WorkoutState> {
     Emitter<WorkoutState> emit,
   ) async {
     emit(const WorkoutLoadingState());
-    Workout? draft;
+    WorkoutDraft? draft;
     try {
       draft = await getDraft();
     } catch (e, s) {
       addError(e, s);
     }
     if (draft != null) {
+      final w = draft.workout;
       emit(WorkoutInProgressState(
-        id: draft.id,
-        startedAt: draft.date,
-        exercises: draft.exercises,
-        elapsedSeconds: draft.durationSeconds,
+        id: w.id,
+        startedAt: w.date,
+        exercises: w.exercises,
+        elapsedSeconds: w.durationSeconds,
+        timerPaused: draft.timerPaused,
       ));
     } else {
       emit(WorkoutInProgressState(
@@ -165,9 +168,12 @@ class WorkoutBloc extends Bloc<WorkoutEvent, WorkoutState> {
     if (state is! WorkoutInProgressState) return;
     final current = state as WorkoutInProgressState;
     if (current.isEditing) return;
-    emit(current.copyWith(elapsedSeconds: event.seconds));
+    emit(current.copyWith(
+      elapsedSeconds: event.seconds,
+      timerPaused: event.paused,
+    ));
     try {
-      await recordDraftElapsed(current.id, event.seconds);
+      await recordDraftElapsed(current.id, event.seconds, paused: event.paused);
     } catch (e, s) {
       addError(e, s);
     }
@@ -178,7 +184,10 @@ class WorkoutBloc extends Bloc<WorkoutEvent, WorkoutState> {
   Future<void> _persist(WorkoutInProgressState s) async {
     if (s.isEditing) return;
     try {
-      await saveDraft(_toWorkout(s, durationSeconds: s.elapsedSeconds));
+      await saveDraft(WorkoutDraft(
+        workout: _toWorkout(s, durationSeconds: s.elapsedSeconds),
+        timerPaused: s.timerPaused,
+      ));
     } catch (e, st) {
       addError(e, st);
     }

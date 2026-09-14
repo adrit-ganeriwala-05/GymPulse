@@ -51,7 +51,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _loadDraft() async {
     Workout? draft;
     try {
-      draft = await sl<GetDraft>().call();
+      draft = (await sl<GetDraft>().call())?.workout;
     } catch (_) {
       draft = null; // banner is a convenience; the DB error surfaces below
     }

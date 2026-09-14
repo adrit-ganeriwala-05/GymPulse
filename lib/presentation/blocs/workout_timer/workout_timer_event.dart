@@ -11,10 +11,13 @@ class WorkoutTimerStarted extends WorkoutTimerEvent {
   /// Seconds already elapsed — non-zero when resuming a draft or editing.
   final int from;
 
-  const WorkoutTimerStarted({this.from = 0});
+  /// Start directly in the paused state (resuming a draft that was paused).
+  final bool paused;
+
+  const WorkoutTimerStarted({this.from = 0, this.paused = false});
 
   @override
-  List<Object?> get props => [from];
+  List<Object?> get props => [from, paused];
 }
 
 class WorkoutTimerTicked extends WorkoutTimerEvent {
