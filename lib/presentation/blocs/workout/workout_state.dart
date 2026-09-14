@@ -17,10 +17,18 @@ class WorkoutInitialState extends WorkoutState {
 class WorkoutInProgressState extends WorkoutState {
   final List<Exercise> exercises;
 
-  const WorkoutInProgressState({required this.exercises});
+  /// Captured when the session begins. The saved workout is dated from this,
+  /// not from the finish tap, so a session crossing midnight files under the
+  /// day it started (BUG-06).
+  final DateTime startedAt;
+
+  const WorkoutInProgressState({
+    required this.exercises,
+    required this.startedAt,
+  });
 
   @override
-  List<Object?> get props => [exercises];
+  List<Object?> get props => [exercises, startedAt];
 }
 
 class WorkoutCompleteState extends WorkoutState {

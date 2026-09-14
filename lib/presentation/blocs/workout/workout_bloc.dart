@@ -14,11 +14,16 @@ class WorkoutBloc extends Bloc<WorkoutEvent, WorkoutState> {
   final SaveWorkout saveWorkout;
   final UpdateStreak updateStreak;
 
+  /// Injectable clock; stamps [WorkoutInProgressState.startedAt].
+  final DateTime Function() now;
+
   WorkoutBloc({
     required this.getWorkouts,
     required this.saveWorkout,
     required this.updateStreak,
-  }) : super(const WorkoutInitialState()) {
+    DateTime Function()? clock,
+  })  : now = clock ?? DateTime.now,
+        super(const WorkoutInitialState()) {
     on<WorkoutStarted>(_onStarted);
     on<ExerciseAdded>(_onExerciseAdded);
     on<SetLogged>(_onSetLogged);
@@ -29,7 +34,7 @@ class WorkoutBloc extends Bloc<WorkoutEvent, WorkoutState> {
   }
 
   void _onStarted(WorkoutStarted event, Emitter<WorkoutState> emit) {
-    emit(const WorkoutInProgressState(exercises: []));
+    emit(WorkoutInProgressState(exercises: const [], startedAt: now()));
   }
 
   void _onExerciseAdded(ExerciseAdded event, Emitter<WorkoutState> emit) {
@@ -42,6 +47,7 @@ class WorkoutBloc extends Bloc<WorkoutEvent, WorkoutState> {
         ...current.exercises,
         Exercise(name: event.name, sets: const []),
       ],
+      startedAt: current.startedAt,
     ));
   }
 
@@ -62,7 +68,7 @@ class WorkoutBloc extends Bloc<WorkoutEvent, WorkoutState> {
       );
     }
 
-    emit(WorkoutInProgressState(exercises: exercises));
+    emit(WorkoutInProgressState(exercises: exercises, startedAt: current.startedAt));
   }
 
   void _onSetRemoved(SetRemoved event, Emitter<WorkoutState> emit) {
@@ -74,7 +80,7 @@ class WorkoutBloc extends Bloc<WorkoutEvent, WorkoutState> {
       final sets = List<ExerciseSet>.from(e.sets)..removeAt(event.setIndex);
       return Exercise(name: e.name, sets: sets);
     }).toList();
-    emit(WorkoutInProgressState(exercises: exercises));
+    emit(WorkoutInProgressState(exercises: exercises, startedAt: current.startedAt));
   }
 
   void _onExerciseRemoved(ExerciseRemoved event, Emitter<WorkoutState> emit) {
@@ -82,6 +88,7 @@ class WorkoutBloc extends Bloc<WorkoutEvent, WorkoutState> {
     final current = state as WorkoutInProgressState;
     emit(WorkoutInProgressState(
       exercises: current.exercises.where((e) => e.name != event.name).toList(),
+      startedAt: current.startedAt,
     ));
   }
 
@@ -93,7 +100,7 @@ class WorkoutBloc extends Bloc<WorkoutEvent, WorkoutState> {
     final current = state as WorkoutInProgressState;
     final workout = Workout(
       id: const Uuid().v4(),
-      date: DateTime.now(),
+      date: current.startedAt,
       durationSeconds: event.durationSeconds,
       exercises: current.exercises,
     );
@@ -103,7 +110,8 @@ class WorkoutBloc extends Bloc<WorkoutEvent, WorkoutState> {
       await saveWorkout(workout);
       await updateStreak();
       emit(WorkoutCompleteState(workout: workout));
-    } catch (e) {
+    } catch (e, s) {
+      addError(e, s); // routes to AppBlocObserver.onError
       emit(WorkoutErrorState(
         message: 'Failed to save workout',
         exercises: current.exercises,
@@ -111,7 +119,10 @@ class WorkoutBloc extends Bloc<WorkoutEvent, WorkoutState> {
       // Return to the editable state so the user can remove the offending
       // set/exercise and retry. Every mutation handler gates on
       // WorkoutInProgressState, so staying in the error state would lock them out.
-      emit(WorkoutInProgressState(exercises: current.exercises));
+      emit(WorkoutInProgressState(
+        exercises: current.exercises,
+        startedAt: current.startedAt,
+      ));
     }
   }
 
