@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gympulse/data/datasources/workout_database.dart';
 import 'package:gympulse/data/datasources/workout_local_datasource.dart';
@@ -10,9 +12,12 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 /// Runs the real datasource against real SQLite (via ffi) — no mocks — so
 /// schema, pragmas and transactions are exercised, not assumed.
 void main() {
-  setUpAll(() {
+  setUpAll(() async {
     sqfliteFfiInit();
     databaseFactory = databaseFactoryFfi;
+    // Own directory: test files run in parallel isolates (see migration_test).
+    await databaseFactory.setDatabasesPath(
+        Directory.systemTemp.createTempSync('gympulse-datasource-').path);
   });
 
   Future<String> dbPath() async =>
@@ -137,6 +142,44 @@ void main() {
     expect(await db.query('workouts'), hasLength(1));
   });
 
+  test('a second draft cannot be inserted: the partial index throws and the first is intact (A2-08)', () async {
+    final ds = WorkoutLocalDatasourceImpl();
+    await ds.upsertWorkout(sample(id: 'd1'), status: 'draft');
+    await expectLater(
+      ds.upsertWorkout(sample(id: 'd2', date: DateTime(2025, 6, 9)), status: 'draft'),
+      throwsA(isA<DatabaseException>()),
+    );
+    final d = (await ds.getDraft())!;
+    expect(d.workout.id, 'd1');
+    expect(d.workout.exercises, hasLength(2), reason: 'a plain INSERT conflict does not touch the other draft');
+    // Re-saving the *same* draft still works (DELETE then INSERT by id).
+    await ds.upsertWorkout(sample(id: 'd1'), status: 'draft', timerPaused: true);
+    expect((await ds.getDraft())!.timerPaused, isTrue);
+  });
+
+  test('exercises are stored with a normalised name_key', () async {
+    final ds = WorkoutLocalDatasourceImpl();
+    await ds.upsertWorkout(
+      WorkoutModel(id: 'w', date: DateTime(2025, 6, 2), durationSeconds: 0, exerciseModels: [
+        ExerciseModel(name: ' Bench Press ', modelSets: const []),
+      ]),
+      status: 'done',
+    );
+    final db = await WorkoutDatabase.instance.database;
+    expect((await db.query('exercises')).single['name_key'], 'bench press');
+  });
+
+  test('deleteDrafts removes every draft row and no finished one (A2-08)', () async {
+    final ds = WorkoutLocalDatasourceImpl();
+    await ds.upsertWorkout(sample(id: 'done'), status: 'done');
+    await ds.upsertWorkout(sample(id: 'd1', date: DateTime(2025, 6, 5)), status: 'draft');
+    await ds.deleteDrafts();
+    expect(await ds.getDraft(), isNull);
+    expect((await ds.getWorkouts()).single.id, 'done');
+    final db = await WorkoutDatabase.instance.database;
+    expect(await db.query('exercises'), hasLength(2), reason: 'only the draft\'s children went');
+  });
+
   test('deleteWorkout cascades to exercises and sets', () async {
     final ds = WorkoutLocalDatasourceImpl();
     await ds.upsertWorkout(sample(), status: 'done');
@@ -189,7 +232,7 @@ void main() {
     await v2.close();
 
     final db = await WorkoutDatabase.instance.database;
-    expect(await db.getVersion(), 3);
+    expect(await db.getVersion(), WorkoutDatabase.schemaVersion);
     final ds = WorkoutLocalDatasourceImpl();
     expect((await ds.getWorkouts()).map((w) => w.id), ['done1']);
     final d = (await ds.getDraft())!;

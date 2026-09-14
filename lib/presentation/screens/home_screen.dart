@@ -6,7 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../domain/entities/workout.dart';
 import '../../domain/streak_rules.dart';
 import '../../domain/workout_stats.dart';
-import '../../domain/usecases/discard_draft.dart';
+import '../../domain/usecases/discard_all_drafts.dart';
 import '../../domain/usecases/get_draft.dart';
 import '../../domain/usecases/get_workouts.dart';
 import '../../injection_container.dart';
@@ -85,7 +85,9 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
     final d = _draft;
     if (d == null) return;
     try {
-      await sl<DiscardDraft>().call(d.id);
+      // Every draft, not just the one shown: a stray second row must not
+      // outlive the user's Discard (A2-08).
+      await sl<DiscardAllDrafts>().call();
     } catch (_) {
       // Banner stays: the row is still there. Say so instead of throwing
       // out of the tap handler (A2-05).

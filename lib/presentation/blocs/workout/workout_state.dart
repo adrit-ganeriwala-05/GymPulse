@@ -20,6 +20,18 @@ class WorkoutLoadingState extends WorkoutState {
   const WorkoutLoadingState();
 }
 
+/// The draft lookup failed. Distinct from "no draft" on purpose: a draft that
+/// exists on disk must never be silently replaced by an empty session (A2-08).
+/// The screen offers Retry, which re-dispatches [WorkoutStarted].
+class WorkoutUnavailableState extends WorkoutState {
+  final String message;
+
+  const WorkoutUnavailableState({required this.message});
+
+  @override
+  List<Object?> get props => [message];
+}
+
 class WorkoutInProgressState extends WorkoutState {
   /// Stable for the whole session; the draft row and the finished row share it.
   final String id;

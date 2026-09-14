@@ -66,6 +66,7 @@ void main() {
     await tester.tap(find.text('Discard'));
     await tester.pumpAndSettle();
     expect(repo.deleted, ['d']);
+    expect(repo.discardAllCalls, 1, reason: 'Discard removes every draft, not one id (A2-08)');
     expect(find.text('Begin Workout 💪'), findsOneWidget);
   });
 

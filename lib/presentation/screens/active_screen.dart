@@ -18,6 +18,7 @@ import '../blocs/workout_timer/workout_timer_state.dart';
 import '../format.dart';
 import '../widgets/circular_timer.dart';
 import '../widgets/exercise_log_card.dart';
+import '../widgets/load_error_view.dart';
 
 class ActiveScreen extends StatelessWidget {
   const ActiveScreen({super.key});
@@ -370,6 +371,9 @@ class _ExerciseSectionState extends State<_ExerciseSection> {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    // No session to add to while the draft lookup has failed (A2-08).
+    final unavailable =
+        context.watch<WorkoutBloc>().state is WorkoutUnavailableState;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -412,7 +416,7 @@ class _ExerciseSectionState extends State<_ExerciseSection> {
           },
         ),
         const SizedBox(height: 12),
-        if (!_showAddForm)
+        if (!_showAddForm && !unavailable)
           OutlinedButton.icon(
             onPressed: _openForm,
             icon: Icon(Icons.add, color: cs.primary),
@@ -507,6 +511,14 @@ class _ExerciseSectionState extends State<_ExerciseSection> {
                   return const Padding(
                     padding: EdgeInsets.all(24),
                     child: Center(child: CircularProgressIndicator()),
+                  );
+                }
+                if (workoutState is WorkoutUnavailableState) {
+                  // The draft row is still on disk; retry re-reads it.
+                  return LoadErrorView(
+                    onRetry: () => context
+                        .read<WorkoutBloc>()
+                        .add(const WorkoutStarted()),
                   );
                 }
                 if (workoutState is! WorkoutInProgressState ||
@@ -814,8 +826,9 @@ class _FinishButtonState extends State<_FinishButton> {
 
   void _onFinishTapped() {
     final workoutState = context.read<WorkoutBloc>().state;
-    if (workoutState is WorkoutInProgressState &&
-        workoutState.exercises.isEmpty) {
+    // Nothing to finish while the session is loading or unavailable.
+    if (workoutState is! WorkoutInProgressState) return;
+    if (workoutState.exercises.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(

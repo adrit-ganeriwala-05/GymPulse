@@ -5,6 +5,7 @@ import 'package:uuid/uuid.dart';
 import '../../../domain/entities/exercise.dart';
 import '../../../domain/entities/workout.dart';
 import '../../../domain/entities/workout_draft.dart';
+import '../../../domain/exercise_name.dart';
 import '../../../domain/usecases/discard_draft.dart';
 import '../../../domain/usecases/get_draft.dart';
 import '../../../domain/usecases/record_draft_elapsed.dart';
@@ -69,6 +70,13 @@ class WorkoutBloc extends Bloc<WorkoutEvent, WorkoutState> {
       draft = await getDraft();
     } catch (e, s) {
       addError(e, s);
+      // Do not fall through to a fresh session: if a draft exists on disk it
+      // would be orphaned by a new id and hidden forever (A2-08). Let the
+      // user retry instead.
+      emit(const WorkoutUnavailableState(
+        message: "Couldn't open your session",
+      ));
+      return;
     }
     if (draft != null) {
       final w = draft.workout;
@@ -104,7 +112,12 @@ class WorkoutBloc extends Bloc<WorkoutEvent, WorkoutState> {
   ) async {
     if (state is! WorkoutInProgressState) return;
     final current = state as WorkoutInProgressState;
-    if (current.exercises.any((e) => e.name == event.name)) return;
+    // Same rule as the stored key and the History grouping (Feature D):
+    // "Bench" and "bench " are one exercise.
+    final key = normalizeExerciseName(event.name);
+    if (current.exercises.any((e) => normalizeExerciseName(e.name) == key)) {
+      return;
+    }
     final next = current.copyWith(exercises: [
       ...current.exercises,
       Exercise(name: event.name, sets: const []),

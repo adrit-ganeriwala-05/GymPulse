@@ -1,6 +1,7 @@
 import 'package:sqflite/sqflite.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../domain/exercise_name.dart';
 import '../models/exercise_model.dart';
 import '../models/workout_model.dart';
 import 'workout_database.dart';
@@ -20,6 +21,10 @@ abstract class WorkoutLocalDatasource {
   Future<({WorkoutModel workout, bool timerPaused})?> getDraft();
 
   Future<void> deleteWorkout(String id);
+
+  /// Deletes every draft row (Home's Discard). More than one should be
+  /// impossible after v4's partial index; this is the belt to that brace.
+  Future<void> deleteDrafts();
 
   /// Narrow UPDATE of the draft's stopwatch reading and paused flag.
   Future<void> updateDraftElapsed(
@@ -44,21 +49,20 @@ class WorkoutLocalDatasourceImpl implements WorkoutLocalDatasource {
     final db = await _db;
 
     await db.transaction((txn) async {
-      // INSERT OR REPLACE on the parent. With foreign_keys ON (set in
-      // onConfigure) the REPLACE's implicit DELETE cascades to exercises and
-      // sets, so the reinsert below cannot duplicate children. This is the
-      // documented replace trap, used deliberately and relying on BUG-05's fix.
-      await txn.insert(
-        'workouts',
-        {
-          'id': workout.id,
-          'date': workout.date.toIso8601String(),
-          'duration_seconds': workout.durationSeconds,
-          'status': status,
-          'timer_paused': timerPaused ? 1 : 0,
-        },
-        conflictAlgorithm: ConflictAlgorithm.replace,
-      );
+      // Explicit DELETE then plain INSERT, not INSERT OR REPLACE. With
+      // foreign_keys ON (set in onConfigure) the DELETE cascades to exercises
+      // and sets, so the reinsert below cannot duplicate children. The
+      // difference from OR REPLACE matters for v4's one-draft partial index:
+      // OR REPLACE would satisfy that conflict by silently deleting the
+      // *other* draft; a plain INSERT throws and leaves it intact (A2-08).
+      await txn.delete('workouts', where: 'id = ?', whereArgs: [workout.id]);
+      await txn.insert('workouts', {
+        'id': workout.id,
+        'date': workout.date.toIso8601String(),
+        'duration_seconds': workout.durationSeconds,
+        'status': status,
+        'timer_paused': timerPaused ? 1 : 0,
+      });
 
       for (int i = 0; i < workout.exerciseModels.length; i++) {
         final exercise = workout.exerciseModels[i];
@@ -69,6 +73,7 @@ class WorkoutLocalDatasourceImpl implements WorkoutLocalDatasource {
           'workout_id': workout.id,
           'name': exercise.name,
           'position': i,
+          'name_key': normalizeExerciseName(exercise.name),
         });
 
         for (int j = 0; j < exercise.modelSets.length; j++) {
@@ -105,14 +110,22 @@ class WorkoutLocalDatasourceImpl implements WorkoutLocalDatasource {
       where: 'status = ?',
       whereArgs: [statusDraft],
       orderBy: 'date DESC',
-      limit: 1,
     );
+    // One draft at a time is enforced by the v4 partial unique index; the
+    // assert catches a future writer that bypasses it (A2-08).
+    assert(rows.length <= 1, 'expected at most one draft, found ${rows.length}');
     if (rows.isEmpty) return null;
-    final drafts = await _hydrate(db, rows);
+    final drafts = await _hydrate(db, rows.take(1).toList());
     return (
       workout: drafts.first,
       timerPaused: (rows.first['timer_paused'] as int? ?? 0) == 1,
     );
+  }
+
+  @override
+  Future<void> deleteDrafts() async {
+    final db = await _db;
+    await db.delete('workouts', where: 'status = ?', whereArgs: [statusDraft]);
   }
 
   @override

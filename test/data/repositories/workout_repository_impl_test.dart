@@ -25,6 +25,8 @@ class RecordingDatasource implements WorkoutLocalDatasource {
   @override
   Future<void> deleteWorkout(String id) async => calls.add('delete:$id');
   @override
+  Future<void> deleteDrafts() async => calls.add('deleteDrafts');
+  @override
   Future<void> updateDraftElapsed(String id, int elapsedSeconds, {required bool paused}) async =>
       calls.add('elapsed:$id:$elapsedSeconds:$paused');
 }
@@ -45,9 +47,10 @@ void main() {
     await repo.updateWorkout(entity);
     await repo.saveDraft(WorkoutDraft(workout: entity, timerPaused: true));
     await repo.deleteWorkout('w');
+    await repo.discardAllDrafts();
     await repo.recordDraftElapsed('w', 42, paused: false);
     expect(ds.calls, [
-      'upsert:done:false', 'upsert:done:false', 'upsert:draft:true', 'delete:w', 'elapsed:w:42:false',
+      'upsert:done:false', 'upsert:done:false', 'upsert:draft:true', 'delete:w', 'deleteDrafts', 'elapsed:w:42:false',
     ]);
   });
 

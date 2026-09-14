@@ -163,6 +163,27 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
+  testWidgets('draft read failure shows Retry, hides Add Exercise; Retry resumes (A2-08)', (tester) async {
+    repo.draft = Workout(id: 'd', date: DateTime.now(), durationSeconds: 0,
+        exercises: const [Exercise(name: 'Row', sets: [])]);
+    repo.failDraftRead = true;
+    await pumpActive(tester);
+    expect(find.text('Retry'), findsOneWidget);
+    expect(find.text('Add Exercise'), findsNothing);
+    expect(find.text('Tap "Add Exercise" to start logging'), findsNothing,
+        reason: 'a read failure must not look like an empty session');
+    // Finish does nothing without a session.
+    await tester.tap(find.text('Finish Workout ✓'));
+    await tester.pump();
+    expect(find.text('Save & Finish'), findsNothing);
+    repo.failDraftRead = false;
+    await tester.tap(find.text('Retry'));
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(find.text('Row'), findsOneWidget, reason: 'the on-disk draft, not a fresh session');
+    expect(find.text('Add Exercise'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('rest timer runs out → sheet closes, bloc reset, no stray ticks', (tester) async {
     await pumpActive(tester);
     await addBench(tester);

@@ -20,6 +20,10 @@ abstract class WorkoutRepository {
 
   Future<void> deleteWorkout(String id);
 
+  /// Removes every in-progress draft. Home's Discard uses this rather than a
+  /// delete-by-id so a stray second draft cannot survive behind the banner.
+  Future<void> discardAllDrafts();
+
   /// Stopwatch reading for the open draft, so a resumed session continues
   /// from accumulated *active* time rather than wall-clock age.
   Future<void> recordDraftElapsed(
