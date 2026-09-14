@@ -303,8 +303,7 @@ class _WorkoutDetailSheet extends StatelessWidget {
                 itemBuilder: (context, wi) {
                   final w = workouts[wi];
                   final totalSets = w.exercises.fold(0, (s, e) => s + e.sets.length);
-                  final totalVolume = w.exercises.fold(0.0,
-                      (s, e) => s + e.sets.fold(0.0, (sv, set) => sv + set.reps * set.weight));
+                  final totalVolume = totalVolumeKg(w);
 
                   return Card(
                     margin: const EdgeInsets.only(bottom: 12),

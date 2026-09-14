@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../domain/entities/workout.dart';
+import '../../domain/workout_stats.dart';
 import '../format.dart';
 import '../units.dart';
 
@@ -29,9 +30,7 @@ class WorkoutSummaryCard extends StatefulWidget {
 class _WorkoutSummaryCardState extends State<WorkoutSummaryCard> {
   bool _expanded = false;
 
-  double get _totalVolume => widget.workout.exercises.fold(0.0, (sum, e) {
-        return sum + e.sets.fold(0.0, (s, set) => s + set.reps * set.weight);
-      });
+  double get _totalVolume => totalVolumeKg(widget.workout);
 
   int get _totalSets => widget.workout.exercises.fold(0, (sum, e) => sum + e.sets.length);
 

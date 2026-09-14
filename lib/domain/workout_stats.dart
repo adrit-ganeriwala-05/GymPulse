@@ -34,6 +34,13 @@ int longestRun(List<Workout> workouts) {
   return best;
 }
 
+/// Σ reps × weight (kg) across every set. Unit conversion is a display
+/// concern; this stays in canonical kg.
+double totalVolumeKg(Workout w) => w.exercises.fold(
+      0.0,
+      (sum, e) => sum + e.sets.fold(0.0, (s, set) => s + set.reps * set.weight),
+    );
+
 /// Workouts keyed by civil day (local midnight).
 Map<DateTime, List<Workout>> groupByDay(List<Workout> workouts) {
   final byDay = <DateTime, List<Workout>>{};
