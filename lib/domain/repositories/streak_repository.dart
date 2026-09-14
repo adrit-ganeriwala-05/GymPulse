@@ -1,6 +1,9 @@
 abstract class StreakRepository {
   Future<int> getStreak();
   Future<int> getRestDaysRemaining();
-  Future<void> updateStreak();
+  Future<bool> canMarkRestDay();
+
+  /// Credits the training day [on] (default: today).
+  Future<void> updateStreak({DateTime? on});
   Future<void> markRestDay();
 }

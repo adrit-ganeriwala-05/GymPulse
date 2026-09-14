@@ -13,7 +13,10 @@ class StreakRepositoryImpl implements StreakRepository {
   Future<int> getRestDaysRemaining() => datasource.getRestDaysRemaining();
 
   @override
-  Future<void> updateStreak() => datasource.updateStreak();
+  Future<bool> canMarkRestDay() => datasource.canMarkRestDay();
+
+  @override
+  Future<void> updateStreak({DateTime? on}) => datasource.updateStreak(on: on);
 
   @override
   Future<void> markRestDay() => datasource.markRestDay();

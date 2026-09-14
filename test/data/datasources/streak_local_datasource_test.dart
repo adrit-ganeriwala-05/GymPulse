@@ -125,6 +125,75 @@ void main() {
     });
   });
 
+  group('updateStreak(on:) — a finished draft credits its own day (A2-03)', () {
+    test('yesterday\'s draft finished today: last workout = yesterday, alive today', () async {
+      clock = day(1);
+      await ds.updateStreak(on: day(0));
+      expect(prefs.getString('last_workout_date'), day(0).toIso8601String());
+      expect(await ds.getStreak(), 1);
+      expect(await ds.canMarkRestDay(), isTrue, reason: 'did not train today');
+    });
+
+    test('backdated day chains onto the streak (gap 1 as of that day)', () async {
+      await ds.updateStreak(); // Mon
+      clock = day(2); // Wed: finish Tuesday\'s draft
+      await ds.updateStreak(on: day(1));
+      expect(await ds.getStreak(), 2);
+      expect(prefs.getString('last_streak_day'), day(1).toIso8601String());
+    });
+
+    test('backdated workout inside a rest-bridged chain: +1, continuity marker not moved back', () async {
+      // The only way "rest today, then finish yesterday's draft" is reachable:
+      // the streak must already be alive today, i.e. bridged by rest days.
+      await ds.updateStreak(); // Mon train
+      clock = day(1);
+      await ds.markRestDay(); // Tue rest (alive: gap 1 from Mon)
+      clock = day(2);
+      await ds.markRestDay(); // Wed rest (alive: gap 1 from Tue)
+      await ds.updateStreak(on: day(1)); // then finish Tuesday's draft
+      expect(await ds.getStreak(), 2, reason: 'Mon, Tue trained; Wed rested');
+      expect(prefs.getString('last_workout_date'), day(1).toIso8601String());
+      expect(prefs.getString('last_streak_day'), day(2).toIso8601String());
+      expect(await ds.getRestDaysRemaining(), 0, reason: 'tokens stay burned');
+    });
+
+    test('backdated behind an already-credited day is history, not a streak day', () async {
+      await ds.updateStreak(); // Mon
+      clock = day(1);
+      await ds.updateStreak(); // Tue
+      await ds.updateStreak(on: day(0)); // Monday\'s second draft
+      expect(await ds.getStreak(), 2);
+      expect(prefs.getString('last_workout_date'), day(1).toIso8601String());
+    });
+
+    test('a stale draft from before a lapse restarts at 1 and reads 0 today', () async {
+      await ds.updateStreak(); // Mon
+      clock = day(6); // Sun: finish Thursday\'s draft (gap 3 from Mon)
+      await ds.updateStreak(on: day(3));
+      expect(prefs.getInt('streak_count'), 1);
+      expect(await ds.getStreak(), 0, reason: 'Thu -> Sun is a gap of 3');
+    });
+  });
+
+  group('canMarkRestDay mirrors markRestDay\'s guard (A2-02)', () {
+    test('false with no streak; true the day after training; false once rested', () async {
+      expect(await ds.canMarkRestDay(), isFalse);
+      await ds.updateStreak();
+      expect(await ds.canMarkRestDay(), isFalse, reason: 'trained today');
+      clock = day(1);
+      expect(await ds.canMarkRestDay(), isTrue);
+      await ds.markRestDay();
+      expect(await ds.canMarkRestDay(), isFalse, reason: 'already rested today');
+      clock = day(2);
+      expect(await ds.canMarkRestDay(), isTrue);
+      await ds.markRestDay();
+      clock = day(3);
+      expect(await ds.canMarkRestDay(), isFalse, reason: 'no tokens left this week');
+      clock = day(5);
+      expect(await ds.canMarkRestDay(), isFalse, reason: 'lapsed');
+    });
+  });
+
   group('markRestDay', () {
     test('rest day bridges the streak without incrementing it', () async {
       await ds.updateStreak(); // Mon

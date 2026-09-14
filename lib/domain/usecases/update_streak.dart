@@ -5,11 +5,13 @@ class UpdateStreak {
 
   const UpdateStreak(this.repository);
 
-  Future<void> call({bool isRestDay = false}) async {
+  /// [on] is the civil day being credited; a finished draft passes its own
+  /// start date so streak and calendar agree. Ignored for rest days.
+  Future<void> call({bool isRestDay = false, DateTime? on}) async {
     if (isRestDay) {
       await repository.markRestDay();
     } else {
-      await repository.updateStreak();
+      await repository.updateStreak(on: on);
     }
   }
 }

@@ -1,4 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:gympulse/data/datasources/streak_local_datasource.dart';
+import 'package:gympulse/data/repositories/streak_repository_impl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:gympulse/domain/entities/exercise.dart';
 import 'package:gympulse/domain/entities/workout.dart';
 import 'package:gympulse/domain/entities/workout_draft.dart';
@@ -71,12 +74,15 @@ class FakeStreakRepo implements StreakRepository {
   @override
   Future<int> getRestDaysRemaining() async => 2;
   @override
-  Future<void> updateStreak() async => updates++;
+  Future<bool> canMarkRestDay() async => false;
+  @override
+  Future<void> updateStreak({DateTime? on}) async => updates++;
   @override
   Future<void> markRestDay() async {}
 }
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
   late FakeWorkoutRepo repo;
   late FakeStreakRepo streak;
   late WorkoutBloc bloc;
@@ -218,6 +224,39 @@ void main() {
     expect(resumed.timerPaused, isTrue);
     expect(resumed.elapsedSeconds, 300);
     await later.close();
+  });
+
+  test('finishing a draft started yesterday credits the streak to yesterday, not today (AUDIT2-03)', () async {
+    // Real streak datasource so the two "trained today" definitions can be compared.
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
+    final today = DateTime(2025, 6, 3, 9);
+    final ds = StreakLocalDatasourceImpl(prefs, clock: () => today);
+    repo.draft = Workout(
+      id: 'stale',
+      date: DateTime(2025, 6, 2, 18), // yesterday evening
+      durationSeconds: 600,
+      exercises: const [Exercise(name: 'Squat', sets: [ExerciseSet(reps: 5, weight: 80)])],
+    );
+    final b = WorkoutBloc(
+      saveWorkout: SaveWorkout(repo),
+      updateWorkout: UpdateWorkout(repo),
+      saveDraft: SaveDraft(repo),
+      getDraft: GetDraft(repo),
+      discardDraft: DiscardDraft(repo),
+      recordDraftElapsed: RecordDraftElapsed(repo),
+      updateStreak: UpdateStreak(StreakRepositoryImpl(ds)),
+      clock: () => today,
+    );
+    b.add(const WorkoutStarted());
+    await settle();
+    b.add(const WorkoutFinished(durationSeconds: 600));
+    await settle();
+    expect(repo.done['stale']!.date, DateTime(2025, 6, 2, 18));
+    expect(prefs.getString('last_workout_date'), DateTime(2025, 6, 2).toIso8601String(),
+        reason: 'streak and calendar must agree on which day was trained');
+    expect(await ds.getStreak(), 1, reason: 'still alive today (gap 1)');
+    await b.close();
   });
 
   test('discard deletes the draft and returns to initial', () async {

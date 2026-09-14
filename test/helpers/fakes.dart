@@ -78,12 +78,19 @@ class FakeWorkoutRepo implements WorkoutRepository {
 
 class FakeStreakRepo implements StreakRepository {
   int streak = 0, rest = 2, updates = 0;
+  bool canRest = false;
+  final creditedDays = <DateTime?>[];
   @override
   Future<int> getStreak() async => streak;
   @override
   Future<int> getRestDaysRemaining() async => rest;
   @override
-  Future<void> updateStreak() async => updates++;
+  Future<bool> canMarkRestDay() async => canRest;
+  @override
+  Future<void> updateStreak({DateTime? on}) async {
+    updates++;
+    creditedDays.add(on);
+  }
   @override
   Future<void> markRestDay() async => rest--;
 }
@@ -152,7 +159,7 @@ Widget activeScreenHarness(Widget child, FakeWorkoutRepo repo, FakeStreakRepo st
     routerConfig: GoRouter(routes: [
       GoRoute(
         path: '/',
-        builder: (_, __) => MultiBlocProvider(
+        builder: (_, _) => MultiBlocProvider(
           providers: [
             BlocProvider(create: (_) => makeWorkoutBloc(repo, streak)..add(start)),
             BlocProvider(create: (_) => WorkoutTimerBloc()),

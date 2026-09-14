@@ -20,8 +20,12 @@ class StreakBloc extends Bloc<StreakEvent, StreakState> {
   }
 
   Future<void> _onLoaded(StreakLoaded event, Emitter<StreakState> emit) async {
-    final (streak, restDays) = await getStreak();
-    emit(StreakLoadedState(currentStreak: streak, restDaysRemaining: restDays));
+    final (streak, restDays, canRest) = await getStreak();
+    emit(StreakLoadedState(
+      currentStreak: streak,
+      restDaysRemaining: restDays,
+      canRestToday: canRest,
+    ));
   }
 
   Future<void> _onUpdated(
@@ -29,8 +33,12 @@ class StreakBloc extends Bloc<StreakEvent, StreakState> {
     Emitter<StreakState> emit,
   ) async {
     await updateStreak();
-    final (streak, restDays) = await getStreak();
-    emit(StreakLoadedState(currentStreak: streak, restDaysRemaining: restDays));
+    final (streak, restDays, canRest) = await getStreak();
+    emit(StreakLoadedState(
+      currentStreak: streak,
+      restDaysRemaining: restDays,
+      canRestToday: canRest,
+    ));
   }
 
   Future<void> _onRestDayMarked(
@@ -38,7 +46,11 @@ class StreakBloc extends Bloc<StreakEvent, StreakState> {
     Emitter<StreakState> emit,
   ) async {
     await updateStreak(isRestDay: true);
-    final (streak, restDays) = await getStreak();
-    emit(StreakLoadedState(currentStreak: streak, restDaysRemaining: restDays));
+    final (streak, restDays, canRest) = await getStreak();
+    emit(StreakLoadedState(
+      currentStreak: streak,
+      restDaysRemaining: restDays,
+      canRestToday: canRest,
+    ));
   }
 }

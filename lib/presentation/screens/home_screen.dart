@@ -127,7 +127,6 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
           final thisWeek = countThisWeek(workouts, now);
           final weekProgress =
               (thisWeek / kTrainingDaysPerWeek).clamp(0.0, 1.0);
-          final trainedToday = workouts.any((w) => isSameCivilDay(w.date, now));
           final longest = longestRun(workouts);
           final recentDayWorkouts = mostRecentDay(workouts);
 
@@ -162,6 +161,7 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
                 builder: (context, state) {
                   final streak = state is StreakLoadedState ? state.currentStreak : 0;
                   final restDays = state is StreakLoadedState ? state.restDaysRemaining : 0;
+                  final canRest = state is StreakLoadedState && state.canRestToday;
                   return Card(
                     child: Padding(
                       padding: const EdgeInsets.all(20),
@@ -228,9 +228,9 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
                               ),
                             ),
                           ),
-                          // Datasource enforces this too; hiding the button
-                          // just makes the rule discoverable.
-                          if (restDays > 0 && streak > 0 && !trainedToday) ...[
+                          // One rule, owned by the datasource: the button is
+                          // shown iff a tap would succeed (A2-02).
+                          if (canRest) ...[
                             const SizedBox(height: 12),
                             OutlinedButton.icon(
                               onPressed: () => context

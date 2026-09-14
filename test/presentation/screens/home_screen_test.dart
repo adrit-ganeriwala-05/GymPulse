@@ -2,7 +2,15 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:gympulse/data/datasources/streak_local_datasource.dart';
+import 'package:gympulse/data/repositories/streak_repository_impl.dart';
+import 'package:gympulse/domain/usecases/get_streak.dart';
+import 'package:gympulse/domain/usecases/update_streak.dart';
+import 'package:gympulse/presentation/blocs/streak/streak_bloc.dart';
+import 'package:gympulse/presentation/blocs/streak/streak_event.dart';
 import 'package:gympulse/presentation/screens/home_screen.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../helpers/fakes.dart';
 
@@ -41,6 +49,7 @@ void main() {
   testWidgets('no workout today and a live streak → Mark Rest Day shown', (tester) async {
     repo.done['w1'] = sampleWorkout(date: DateTime.now().subtract(const Duration(days: 1)));
     streak.streak = 1;
+    streak.canRest = true;
     await tester.pumpWidget(homeHarness(const HomeScreen(), streak));
     await tester.pumpAndSettle();
     expect(find.textContaining('Mark Rest Day'), findsOneWidget);
@@ -58,5 +67,34 @@ void main() {
     await tester.pumpAndSettle();
     expect(repo.deleted, ['d']);
     expect(find.text('Begin Workout 💪'), findsOneWidget);
+  });
+
+  testWidgets('Mark Rest Day disappears once a rest day is marked; button and guard agree (AUDIT2-02)', (tester) async {
+    // Real streak datasource: the fake cannot express "already rested today".
+    final today = DateTime(2025, 6, 3, 9);
+    final yesterday = DateTime(2025, 6, 2);
+    await registerFakes(repo, prefs: {
+      'streak_count': 1,
+      'last_workout_date': yesterday.toIso8601String(),
+      'last_streak_day': yesterday.toIso8601String(),
+    });
+    final ds = StreakLocalDatasourceImpl(locator<SharedPreferences>(), clock: () => today);
+    final streakRepo = StreakRepositoryImpl(ds);
+    await tester.pumpWidget(MaterialApp(
+      home: BlocProvider(
+        create: (_) => StreakBloc(
+          getStreak: GetStreak(streakRepo),
+          updateStreak: UpdateStreak(streakRepo),
+        )..add(const StreakLoaded()),
+        child: const HomeScreen(),
+      ),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Mark Rest Day (2 left'), findsOneWidget);
+    await tester.tap(find.textContaining('Mark Rest Day'));
+    await tester.pumpAndSettle();
+    expect(await ds.getRestDaysRemaining(), 1);
+    expect(find.textContaining('Mark Rest Day'), findsNothing,
+        reason: 'datasource refuses a second rest today, so the button must not offer it');
   });
 }

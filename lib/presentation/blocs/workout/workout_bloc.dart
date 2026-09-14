@@ -225,7 +225,9 @@ class WorkoutBloc extends Bloc<WorkoutEvent, WorkoutState> {
         // Same id as the draft row → the upsert flips it to 'done' in one
         // statement; there is never a moment with both a draft and a copy.
         await saveWorkout(workout);
-        await updateStreak();
+        // Credit the day the workout is dated, not the day Finish was tapped:
+        // a draft resumed the next morning is yesterday's training (A2-03).
+        await updateStreak(on: workout.date);
       }
       emit(WorkoutCompleteState(workout: workout));
     } catch (e, s) {

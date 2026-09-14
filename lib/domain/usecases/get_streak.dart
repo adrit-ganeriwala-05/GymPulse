@@ -5,9 +5,10 @@ class GetStreak {
 
   const GetStreak(this.repository);
 
-  Future<(int streak, int restDaysRemaining)> call() async {
+  Future<(int streak, int restDaysRemaining, bool canRestToday)> call() async {
     final streak = await repository.getStreak();
     final restDays = await repository.getRestDaysRemaining();
-    return (streak, restDays);
+    final canRest = await repository.canMarkRestDay();
+    return (streak, restDays, canRest);
   }
 }
