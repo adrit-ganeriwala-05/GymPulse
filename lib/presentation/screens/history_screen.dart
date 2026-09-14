@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../domain/entities/workout.dart';
+import '../../domain/usecases/delete_workout.dart';
 import '../../domain/usecases/get_workouts.dart';
 import '../../injection_container.dart';
 import '../widgets/load_error_view.dart';
@@ -26,6 +27,67 @@ class _HistoryScreenState extends State<HistoryScreen> {
   }
 
   void _reload() => setState(() => _workoutsFuture = sl<GetWorkouts>().call());
+
+  Future<void> _showActions(Workout w) async {
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: const Color(0xFFFDF8F3),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.edit_outlined),
+              title: const Text('Edit workout'),
+              onTap: () => Navigator.pop(ctx, 'edit'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete_outline),
+              title: const Text('Delete workout'),
+              onTap: () => Navigator.pop(ctx, 'delete'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted || action == null) return;
+    if (action == 'edit') {
+      context.push('/active', extra: w);
+      return;
+    }
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete this workout?'),
+        content: const Text('This cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true || !mounted) return;
+    try {
+      await sl<DeleteWorkout>().call(w.id);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not delete workout')),
+        );
+      }
+      return;
+    }
+    if (mounted) _reload();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -91,10 +153,14 @@ class _HistoryScreenState extends State<HistoryScreen> {
           return ListView.builder(
             padding: const EdgeInsets.all(16),
             itemCount: workouts.length,
-            itemBuilder: (context, index) => WorkoutSummaryCard(
-              workout: workouts[index],
-              // FIX: pass saved unit so history shows kg or lbs correctly
-              weightUnit: sl<SharedPreferences>().getString('weight_unit') ?? 'kg',
+            itemBuilder: (context, index) => GestureDetector(
+              // Long-press for edit/delete; tap still expands the card.
+              onLongPress: () => _showActions(workouts[index]),
+              child: WorkoutSummaryCard(
+                workout: workouts[index],
+                // FIX: pass saved unit so history shows kg or lbs correctly
+                weightUnit: sl<SharedPreferences>().getString('weight_unit') ?? 'kg',
+              ),
             ),
           );
         },
