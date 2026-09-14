@@ -71,7 +71,11 @@ class ActiveScreen extends StatelessWidget {
           elevation: 0,
         ),
         body: const _ActiveBody(),
-        floatingActionButton: const _FinishButton(),
+        // The full-width FAB floats up with the keyboard and lands exactly over
+        // the reps/weight entry row, swallowing the ✓ tap. Hide it while typing.
+        floatingActionButton: MediaQuery.viewInsetsOf(context).bottom > 0
+            ? null
+            : const _FinishButton(),
         floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
       ),
     );
@@ -645,6 +649,12 @@ class _RestTimerSheetState extends State<_RestTimerSheet> {
                           onPressed: () => context
                               .read<RestTimerBloc>()
                               .add(RestTimerStarted(_selectedDuration)),
+                          // Theme default is minimumSize(double.infinity, 56);
+                          // inside this centered Row that is an infinite width
+                          // constraint and the sheet body fails to lay out.
+                          style: ElevatedButton.styleFrom(
+                            minimumSize: const Size(140, 48),
+                          ),
                           child: Text(
                             'Start',
                             style: GoogleFonts.dmSans(

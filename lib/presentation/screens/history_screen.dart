@@ -26,7 +26,13 @@ class _HistoryScreenState extends State<HistoryScreen> {
     _workoutsFuture = sl<GetWorkouts>().call();
   }
 
-  void _reload() => setState(() => _workoutsFuture = sl<GetWorkouts>().call());
+  void _reload() {
+    // Block body: an arrow would return the assignment's Future from the
+    // setState callback, which the framework rejects.
+    setState(() {
+      _workoutsFuture = sl<GetWorkouts>().call();
+    });
+  }
 
   Future<void> _showActions(Workout w) async {
     final action = await showModalBottomSheet<String>(

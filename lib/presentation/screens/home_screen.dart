@@ -39,7 +39,13 @@ class _HomeScreenState extends State<HomeScreen> {
     _loadDraft();
   }
 
-  void _reload() => setState(() => _workoutsFuture = sl<GetWorkouts>().call());
+  void _reload() {
+    // Block body: an arrow would return the assignment's Future from the
+    // setState callback, which the framework rejects.
+    setState(() {
+      _workoutsFuture = sl<GetWorkouts>().call();
+    });
+  }
 
   Future<void> _loadDraft() async {
     Workout? draft;
@@ -320,9 +326,21 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               const SizedBox(height: 24),
 
-              Text(
-                'Recent Activity',
-                style: Theme.of(context).textTheme.titleLarge,
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Recent Activity',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                  // Explicit link: the card's own InkWell (expand) wins the
+                  // gesture arena, so a tap on the card never navigated.
+                  if (workouts.isNotEmpty)
+                    TextButton(
+                      onPressed: () => context.push('/history'),
+                      child: const Text('View all'),
+                    ),
+                ],
               ),
               const SizedBox(height: 12),
               if (workouts.isEmpty)
@@ -341,14 +359,11 @@ class _HomeScreenState extends State<HomeScreen> {
                 )
               else
                 ...recentDayWorkouts.map(
-                  (w) => GestureDetector(
-                    onTap: () => context.push('/history'),
-                    child: WorkoutSummaryCard(
-                      workout: w,
-                      weightUnit:
-                          sl<SharedPreferences>().getString('weight_unit') ??
-                              'kg',
-                    ),
+                  (w) => WorkoutSummaryCard(
+                    workout: w,
+                    weightUnit:
+                        sl<SharedPreferences>().getString('weight_unit') ??
+                            'kg',
                   ),
                 ),
             ],

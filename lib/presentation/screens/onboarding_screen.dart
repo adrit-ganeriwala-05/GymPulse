@@ -54,6 +54,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       if (!mounted) return;
       setState(() => _nameError = null);
     }
+    // Drop the keyboard before sliding: with it up, the next page's Column
+    // laid out in a 261px-tall viewport and overflowed mid-animation.
+    FocusManager.instance.primaryFocus?.unfocus();
     _pageController.nextPage(
       duration: const Duration(milliseconds: 300),
       curve: Curves.ease,
@@ -225,7 +228,9 @@ class _OnboardingPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    return Padding(
+    // Scrollable like _NameInputPage, so a short viewport (keyboard up,
+    // small phone, landscape) scrolls instead of overflowing.
+    return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 48),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,

@@ -13,10 +13,13 @@ import 'presentation/router.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   Bloc.observer = const AppBlocObserver();
+  // Chain, don't replace: the default presents the error; the test binding
+  // installs its own handler and asserts it is still in place.
+  final previousOnError = FlutterError.onError;
   FlutterError.onError = (details) {
-    FlutterError.presentError(details);
     developer.log('Flutter error', name: 'gympulse',
         error: details.exception, stackTrace: details.stack);
+    previousOnError?.call(details);
   };
   await init();
   final onboardingComplete =

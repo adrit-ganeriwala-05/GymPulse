@@ -27,7 +27,13 @@ class _CalendarScreenState extends State<CalendarScreen> {
     _workoutsFuture = sl<GetWorkouts>().call();
   }
 
-  void _reload() => setState(() => _workoutsFuture = sl<GetWorkouts>().call());
+  void _reload() {
+    // Block body: an arrow would return the assignment's Future from the
+    // setState callback, which the framework rejects.
+    setState(() {
+      _workoutsFuture = sl<GetWorkouts>().call();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
