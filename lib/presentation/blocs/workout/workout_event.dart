@@ -66,7 +66,3 @@ class WorkoutFinished extends WorkoutEvent {
   @override
   List<Object?> get props => [durationSeconds];
 }
-
-class HistoryRequested extends WorkoutEvent {
-  const HistoryRequested();
-}

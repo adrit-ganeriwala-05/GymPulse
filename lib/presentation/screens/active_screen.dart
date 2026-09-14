@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -14,23 +15,61 @@ import '../blocs/workout/workout_state.dart';
 import '../blocs/workout_timer/workout_timer_bloc.dart';
 import '../blocs/workout_timer/workout_timer_event.dart';
 import '../blocs/workout_timer/workout_timer_state.dart';
+import '../format.dart';
 import '../widgets/circular_timer.dart';
 import '../widgets/exercise_log_card.dart';
 
 class ActiveScreen extends StatelessWidget {
   const ActiveScreen({super.key});
 
+  // canPop:false routes the system back gesture here instead of popping. A
+  // session with logged exercises asks before discarding; an empty one
+  // leaves freely. Covers back gestures only — process death / backgrounding
+  // needs draft persistence (see FEATURE_PROPOSALS.md, Feature A).
+  Future<void> _onPopInvoked(BuildContext context, bool didPop) async {
+    if (didPop) return;
+    final state = context.read<WorkoutBloc>().state;
+    final hasWork =
+        state is WorkoutInProgressState && state.exercises.isNotEmpty;
+    if (!hasWork) {
+      context.go('/');
+      return;
+    }
+    final discard = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Discard workout?'),
+        content: const Text('Logged sets will be lost.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Keep going'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Discard'),
+          ),
+        ],
+      ),
+    );
+    if (discard == true && context.mounted) context.go('/');
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Active Workout'),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) => _onPopInvoked(context, didPop),
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Active Workout'),
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+        ),
+        body: const _ActiveBody(),
+        floatingActionButton: const _FinishButton(),
+        floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
       ),
-      body: const _ActiveBody(),
-      floatingActionButton: const _FinishButton(),
-      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
     );
   }
 }
@@ -54,12 +93,6 @@ class _ActiveBody extends StatelessWidget {
 class _WorkoutTimerSection extends StatelessWidget {
   const _WorkoutTimerSection();
 
-  String _format(int seconds) {
-    final m = seconds ~/ 60;
-    final s = seconds % 60;
-    return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
-  }
-
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
@@ -80,7 +113,7 @@ class _WorkoutTimerSection extends StatelessWidget {
               children: [
                 CircularTimer(
                   progress: progress,
-                  centerText: _format(seconds),
+                  centerText: formatDuration(seconds),
                   labelText: 'workout duration',
                   size: 200,
                   strokeWidth: 10,
@@ -534,11 +567,18 @@ class _RestTimerSheetState extends State<_RestTimerSheet> {
             keyboardType: TextInputType.number,
             decoration: const InputDecoration(
               labelText: 'Custom seconds',
+              helperText: 'Press done to apply (5–3600)',
               isDense: true,
             ),
-            onChanged: (v) {
+            inputFormatters: [
+              FilteringTextInputFormatter.digitsOnly,
+              LengthLimitingTextInputFormatter(4),
+            ],
+            // Commit on submit, not per keystroke: typing "120" must not
+            // select 1, then 12, then 120.
+            onSubmitted: (v) {
               final n = int.tryParse(v);
-              if (n != null && n > 0) setState(() => _selectedDuration = n);
+              if (n != null) setState(() => _selectedDuration = n.clamp(5, 3600));
             },
           ),
           const SizedBox(height: 24),

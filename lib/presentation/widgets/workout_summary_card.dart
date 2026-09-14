@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../domain/entities/workout.dart';
+import '../format.dart';
 import '../units.dart';
 
 class WorkoutSummaryCard extends StatefulWidget {
@@ -21,18 +22,6 @@ class WorkoutSummaryCard extends StatefulWidget {
 
 class _WorkoutSummaryCardState extends State<WorkoutSummaryCard> {
   bool _expanded = false;
-
-  String _formatDuration(int seconds) {
-    final m = seconds ~/ 60;
-    final s = seconds % 60;
-    return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
-  }
-
-  String _formatDate(DateTime date) {
-    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    return '${days[date.weekday - 1]}, ${months[date.month - 1]} ${date.day}';
-  }
 
   double get _totalVolume => widget.workout.exercises.fold(0.0, (sum, e) {
         return sum + e.sets.fold(0.0, (s, set) => s + set.reps * set.weight);
@@ -60,7 +49,7 @@ class _WorkoutSummaryCardState extends State<WorkoutSummaryCard> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          _formatDate(widget.workout.date),
+                          formatDayMonth(widget.workout.date, shortDay: true),
                           style: Theme.of(context).textTheme.titleMedium?.copyWith(
                                 color: cs.primary,
                               ),
@@ -69,7 +58,7 @@ class _WorkoutSummaryCardState extends State<WorkoutSummaryCard> {
                         Wrap(
                           spacing: 12,
                           children: [
-                            _chip('⏱ ${_formatDuration(widget.workout.durationSeconds)}'),
+                            _chip('⏱ ${formatDuration(widget.workout.durationSeconds)}'),
                             _chip('🏋 ${widget.workout.exercises.length} exercises'),
                             // FIX: show unit next to volume
                             _chip('📦 ${formatWeight(_totalVolume, widget.weightUnit, decimals: 0)} ${widget.weightUnit}'),

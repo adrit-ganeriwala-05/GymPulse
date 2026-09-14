@@ -71,7 +71,7 @@ GoRouter createRouter(bool onboardingComplete) {
       ),
       GoRoute(
         path: '/history',
-        builder: (context, state) => HistoryScreen(key: UniqueKey()),
+        builder: (context, state) => const HistoryScreen(),
       ),
       GoRoute(
         path: '/calendar',

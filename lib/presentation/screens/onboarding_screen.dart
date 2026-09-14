@@ -51,6 +51,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         return;
       }
       await sl<SharedPreferences>().setString('user_name', name);
+      if (!mounted) return;
       setState(() => _nameError = null);
     }
     _pageController.nextPage(
@@ -79,6 +80,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             Expanded(
               child: PageView.builder(
                 controller: _pageController,
+                // Buttons are the only way forward, so _handleNext's name
+                // check cannot be bypassed by swiping (BUG-15).
+                physics: const NeverScrollableScrollPhysics(),
                 itemCount: _pages.length,
                 onPageChanged: (i) => setState(() => _page = i),
                 itemBuilder: (context, i) {
@@ -200,6 +204,7 @@ class _NameInputPage extends StatelessWidget {
           const SizedBox(height: 36),
           TextField(
             controller: nameController,
+            maxLength: 40,
             decoration: InputDecoration(
               labelText: 'What should we call you?',
               hintText: 'Enter your name',

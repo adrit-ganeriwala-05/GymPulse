@@ -62,7 +62,6 @@ Future<void> init() async {
   );
   sl.registerFactory<WorkoutBloc>(
     () => WorkoutBloc(
-      getWorkouts: sl<GetWorkouts>(),
       saveWorkout: sl<SaveWorkout>(),
       updateStreak: sl<UpdateStreak>(),
     ),

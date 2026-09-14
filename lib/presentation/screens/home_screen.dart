@@ -10,6 +10,7 @@ import '../../injection_container.dart';
 import '../blocs/streak/streak_bloc.dart';
 import '../blocs/streak/streak_event.dart';
 import '../blocs/streak/streak_state.dart';
+import '../format.dart';
 import '../widgets/load_error_view.dart';
 import '../widgets/workout_summary_card.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -38,12 +39,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // FIX: greeting changed from time-of-day to "Welcome, name 👋" per spec
   String _greeting() => 'Welcome, $_userName 👋';
-
-  String _formatDate(DateTime date) {
-    const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    return '${days[date.weekday - 1]}, ${months[date.month - 1]} ${date.day}';
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -124,10 +119,12 @@ class _HomeScreenState extends State<HomeScreen> {
                     Text(
                       _greeting(),
                       style: Theme.of(context).textTheme.displayMedium,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      _formatDate(DateTime.now()),
+                      formatDayMonth(DateTime.now()),
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                             color: cs.primary,
                           ),

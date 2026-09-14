@@ -7,6 +7,7 @@ import 'package:table_calendar/table_calendar.dart';
 import '../../domain/entities/workout.dart';
 import '../../domain/usecases/get_workouts.dart';
 import '../../injection_container.dart';
+import '../format.dart';
 import '../units.dart';
 import '../widgets/load_error_view.dart';
 
@@ -85,12 +86,6 @@ class _CalendarViewState extends State<_CalendarView> {
   DateTime _focusedDay = DateTime.now();
   DateTime? _selectedDay;
 
-  String _formatDetailDate(DateTime date) {
-    const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-    const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-    return '${days[date.weekday - 1]}, ${months[date.month - 1]} ${date.day}';
-  }
-
   void _showWorkoutDetail(BuildContext context, DateTime day, List<Workout> workouts) {
     // FIX: read weight unit synchronously from registered SharedPreferences singleton
     final weightUnit = sl<SharedPreferences>().getString('weight_unit') ?? 'kg';
@@ -104,7 +99,7 @@ class _CalendarViewState extends State<_CalendarView> {
       builder: (_) => _WorkoutDetailSheet(
         day: day,
         workouts: workouts,
-        formattedDate: _formatDetailDate(day),
+        formattedDate: formatDayMonth(day, longMonth: true),
         weightUnit: weightUnit,
       ),
     );
@@ -227,16 +222,6 @@ class _CalendarViewState extends State<_CalendarView> {
                 fontSize: 14,
               ),
             ),
-            const SizedBox(width: 20),
-            _LegendDot(color: cs.outline),
-            const SizedBox(width: 6),
-            Text(
-              'Rest day',
-              style: GoogleFonts.dmSans(
-                color: const Color(0xFF4A3728),
-                fontSize: 14,
-              ),
-            ),
           ],
         ),
       ],
@@ -269,12 +254,6 @@ class _WorkoutDetailSheet extends StatelessWidget {
     required this.formattedDate,
     this.weightUnit = 'kg',
   });
-
-  String _formatDuration(int seconds) {
-    final m = seconds ~/ 60;
-    final s = seconds % 60;
-    return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -336,7 +315,7 @@ class _WorkoutDetailSheet extends StatelessWidget {
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
                               Text(
-                                '⏱ ${_formatDuration(w.durationSeconds)}',
+                                '⏱ ${formatDuration(w.durationSeconds)}',
                                 style: GoogleFonts.dmSans(
                                   color: cs.primary,
                                   fontSize: 15,

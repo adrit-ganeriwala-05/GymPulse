@@ -53,12 +53,3 @@ class WorkoutErrorState extends WorkoutState {
   @override
   List<Object?> get props => [message, exercises];
 }
-
-class WorkoutHistoryState extends WorkoutState {
-  final List<Workout> workouts;
-
-  const WorkoutHistoryState({required this.workouts});
-
-  @override
-  List<Object?> get props => [workouts];
-}

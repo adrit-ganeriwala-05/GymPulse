@@ -3,14 +3,12 @@ import 'package:uuid/uuid.dart';
 
 import '../../../domain/entities/exercise.dart';
 import '../../../domain/entities/workout.dart';
-import '../../../domain/usecases/get_workouts.dart';
 import '../../../domain/usecases/save_workout.dart';
 import '../../../domain/usecases/update_streak.dart';
 import 'workout_event.dart';
 import 'workout_state.dart';
 
 class WorkoutBloc extends Bloc<WorkoutEvent, WorkoutState> {
-  final GetWorkouts getWorkouts;
   final SaveWorkout saveWorkout;
   final UpdateStreak updateStreak;
 
@@ -18,7 +16,6 @@ class WorkoutBloc extends Bloc<WorkoutEvent, WorkoutState> {
   final DateTime Function() now;
 
   WorkoutBloc({
-    required this.getWorkouts,
     required this.saveWorkout,
     required this.updateStreak,
     DateTime Function()? clock,
@@ -30,7 +27,6 @@ class WorkoutBloc extends Bloc<WorkoutEvent, WorkoutState> {
     on<SetRemoved>(_onSetRemoved);
     on<ExerciseRemoved>(_onExerciseRemoved);
     on<WorkoutFinished>(_onFinished);
-    on<HistoryRequested>(_onHistoryRequested);
   }
 
   void _onStarted(WorkoutStarted event, Emitter<WorkoutState> emit) {
@@ -124,13 +120,5 @@ class WorkoutBloc extends Bloc<WorkoutEvent, WorkoutState> {
         startedAt: current.startedAt,
       ));
     }
-  }
-
-  Future<void> _onHistoryRequested(
-    HistoryRequested event,
-    Emitter<WorkoutState> emit,
-  ) async {
-    final workouts = await getWorkouts();
-    emit(WorkoutHistoryState(workouts: workouts));
   }
 }
