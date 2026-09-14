@@ -6,10 +6,12 @@ import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite/sqflite.dart';
 
-/// Process-death check in ONE entrypoint so both runs use the same APK
-/// (flutter_tools uninstalls — wiping app data — when the installed hash
-/// differs). Run 1 seeds a paused draft and exits; the harness force-stops
-/// the process; run 2 detects the marker and asserts the resume.
+/// Process-death seed/resume script. NOTE: on Android `flutter test
+/// integration_test/...` reinstalls the APK on EVERY run and wipes app data,
+/// so this cannot prove persistence under the test harness (observed: run 2
+/// still saw phase 1). The authoritative check is a real debug build driven
+/// by adb (`am force-stop`, relaunch) — see FIXES.md round 3. Kept because
+/// phase 1 alone still exercises the pause+checkpoint path on device.
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 

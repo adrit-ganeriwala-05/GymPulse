@@ -123,9 +123,13 @@ gympulse/
 │           ├── load_error_view.dart        # FutureBuilder error branch with retry
 │           └── workout_summary_card.dart   # used on HomeScreen + HistoryScreen
 ├── test/
-│   ├── data/datasources/streak_local_datasource_test.dart   # 21 cases, injected clock
-│   ├── data/datasources/workout_local_datasource_test.dart  # real SQLite via ffi, incl. v1→v2 migration
-│   └── presentation/blocs/workout_bloc_test.dart            # draft / resume / finish / edit / failure
+│   ├── helpers/fakes.dart                   # in-memory repos, get_it registration, screen harnesses
+│   ├── data/datasources/…                   # streak (23, injected clock) · workout on real SQLite via ffi (12, incl. v1→v3)
+│   ├── data/repositories/…                  # status/paused policy, entity→model mapping
+│   ├── domain/workout_stats_test.dart       # aggregates: boundaries, DST, same-day, volume
+│   ├── presentation/blocs/…                 # WorkoutBloc, WorkoutTimerBloc, RestTimerBloc (fakeAsync)
+│   ├── presentation/screens/…               # Active, Home, History, Onboarding — pinned to device bugs
+│   └── presentation/widgets/…, units_and_settings_test.dart
 ├── integration_test/app_flow_test.dart     # on-device core flow from a seeded v1 DB
 ├── pubspec.yaml / pubspec.lock
 ├── analysis_options.yaml                   # default flutter_lints, no custom rules
@@ -219,14 +223,15 @@ None of these implement `Equatable` or `copyWith` — they are plain immutable v
 
 ### 5.3 SQLite Schema (`data/datasources/workout_database.dart`)
 
-Database file: `gympulse.db`, **version 2**. `PRAGMA foreign_keys = ON` is set in `onConfigure` (the only hook where it takes effect — it is a no-op inside the create/upgrade transaction). `onUpgrade` is an `if (oldVersion < N)` ladder; `onDowngrade` deletes.
+Database file: `gympulse.db`, **version 3** (v2 `status`, v3 `timer_paused`). `PRAGMA foreign_keys = ON` is set in `onConfigure` (the only hook where it takes effect — it is a no-op inside the create/upgrade transaction). `onUpgrade` is an `if (oldVersion < N)` ladder; `onDowngrade` deletes.
 
 ```sql
 CREATE TABLE workouts (
   id TEXT PRIMARY KEY,
   date TEXT NOT NULL,                 -- ISO8601 local, = session START time
   duration_seconds INTEGER NOT NULL DEFAULT 0,
-  status TEXT NOT NULL DEFAULT 'done' -- 'done' | 'draft'  (v2)
+  status TEXT NOT NULL DEFAULT 'done', -- 'done' | 'draft'  (v2)
+  timer_paused INTEGER NOT NULL DEFAULT 0 -- draft stopwatch paused (v3)
 );
 
 CREATE TABLE exercises (
@@ -278,8 +283,7 @@ Single `init()` function, awaited before `runApp`. Registration order matters (e
 ### 6.2 Routing & Guards (`presentation/router.dart`)
 - `createRouter(bool onboardingComplete)` takes the already-read onboarding flag to pick `initialLocation` (avoids a flash of the wrong screen).
 - `redirect` callback re-checks the same flag on every navigation (defense in depth beyond just `initialLocation`).
-- Routes `/`, `/active`, `/history` construct their BLoCs inline in the route `builder`, wired as `MultiBlocProvider`s scoped to that screen only.
-- `/history` is given `key: UniqueKey()` specifically so revisiting it always creates a new `HistoryScreen` state (forces the one-shot `FutureBuilder` fetch to re-run).
+- Routes `/`, `/active`, `/history` construct their BLoCs inline in the route `builder`, wired as `MultiBlocProvider`s scoped to that screen only. **`/active` is a child route of `/`** (`GoRoute(path: 'active')` nested), so it is always poppable and `PopScope` runs on Android system back; Home is not recreated on the way to it and refreshes via `routeObserver` / `RouteAware.didPopNext`.
 - Custom `errorBuilder` renders a themed 404 page with a "Go Home" button rather than the default Flutter error screen.
 
 ### 6.3 Streak & Rest-Day Algorithm (`StreakLocalDatasourceImpl`)
@@ -304,6 +308,8 @@ All theme data is defined inline as one large `ThemeData` literal in `main.dart`
 
 ### 7.2 Known gaps / next steps
 - **BUG-09 partially addressed**: Home's "Longest run" tile counts workout-day runs and cannot see rest days; the streak card can. Reconciliation needs rest days as queryable rows.
+- Draft snapshot = exercises/sets + `duration_seconds` (accumulated *active* stopwatch time, checkpointed every 10 s) + `timer_paused`. Resume seeds the timer paused if it died paused. Not persisted on purpose: rest-timer countdown, unsubmitted input.
+- `flutter test integration_test/…` on Android reinstalls and wipes app data each run — use a real build + `adb` for cross-launch checks.
 - History, Home and Calendar each call `GetWorkouts` directly via `FutureBuilder`; History calls `DeleteWorkout` directly. A shared `HistoryBloc` is the next refactor.
 - `getWorkouts` is N+1 by design; revisit past ~2000 workouts.
 - No `CHECK` constraints on `sets` (needs a table rebuild → v3).

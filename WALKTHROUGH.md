@@ -50,11 +50,13 @@ Written for: the repo owner, to defend each decision in a technical interview.
 
 **Why a Loading state.** `WorkoutStarted` must look up the draft before it knows whether to create or resume. Without `Loading`, the screen renders "Add Exercise" for an empty session and then swaps to a resumed one — visible flicker, and a tap in that window would mutate the wrong session. A sealed hierarchy makes the screen *exhaustively* handle it; a single class with nullable fields would let `exercises == null && isLoading == false` exist.
 
-**Why `id` and `startedAt` are in the state.** The draft row and the finished row share the id, so finishing is one `INSERT OR REPLACE` that flips `status` — never a draft *and* a copy. `startedAt` is the workout's date (BUG-06) and the timer's origin on resume (`now − startedAt`).
+**Why `id` and `startedAt` are in the state.** The draft row and the finished row share the id, so finishing is one `INSERT OR REPLACE` that flips `status` — never a draft *and* a copy. `startedAt` is the workout's date (BUG-06); the timer resumes from the *persisted* `elapsedSeconds`, never from wall-clock age (§4, Stopwatch persistence).
 
 **Why write-through, not `AppLifecycleState`.** `paused` does not fire when the OS kills the process; `detached` cannot be awaited. Persisting on every mutation is the only strategy that covers backgrounding, navigation *and* kill. Cost: one small transaction per tap, on a local DB.
 
 **Why a draft is a workout row.** Reuses the tables, the cascade, and the hydrate code; no JSON blob and no codec. `getWorkouts` filters `status = 'done'`. The replace-cascade path the audit flagged as a trap is now used on purpose — and is safe only because `onConfigure` guarantees FKs.
+
+**Stopwatch persistence (round 2/3).** Elapsed is *state*, not `now − startedAt`: `elapsedSeconds` + `timerPaused` on `WorkoutInProgressState`, checkpointed by a `BlocListener<WorkoutTimerBloc>` every 10 s, on pause/stop, and on the pause→running edge, via `RecordDraftElapsed` (a single-column `UPDATE`, not a full replace). Resume seeds `WorkoutTimerStarted(from: elapsed, paused: timerPaused)`, which emits `WorkoutTimerPausedState` directly and creates no subscription — so a session that died paused resumes paused and accrues nothing. *Stopped* is persisted as paused for the same reason. Schema v3 carries `timer_paused`. Snapshot audit: rest-timer countdown (seconds-scale, dropped), unsubmitted text and open forms (UI-only), weight unit (separate pref) — none change what the user sees on resume.
 
 **Failure.** Draft write fails → `addError` (observer logs it), in-memory state stays authoritative, next mutation retries with a full snapshot. Finish fails → `Error` then straight back to `InProgress` so the mutation handlers (which gate on `InProgress`) accept the user's fix (BUG-26).
 
@@ -74,6 +76,16 @@ Same states; `WorkoutInProgressState.editing: Workout?` is the mode flag. `Worko
 
 **Judgment call to revisit.** History still reads via `FutureBuilder` and calls `DeleteWorkout` directly. It matches the screen's existing read path and cost nothing extra; the next refactor is a `HistoryBloc` so History, Home and Calendar share one source of truth instead of three `GetWorkouts` calls.
 
-## 6. What I'd do next
+## 6. Android vs iOS (what the emulator forced)
+
+**System back exited the app from `/active`.** go_router 13's `popRoute` (`delegate.dart:59`) nulls the navigator when `canPop()` is false and never calls `maybePop`, so a `PopScope` on a *root* route is bypassed and Flutter falls through to `SystemNavigator.pop()`. `/active` was always a root route because Home used `go()`. Fix: `/active` is a child route of `/`, so `go('/active')` builds `['/', '/active']` and the gesture reaches `PopScope`. Consequence: Home persists beneath and is no longer recreated on finish — it subscribes to a `RouteObserver` and reloads in `didPopNext` (workouts, draft banner, streak). iOS never surfaced this: no system back.
+
+**Edit mode ran the clock.** Same class as the pause flag: the saved duration was seeded into a *running* timer, so a short edit would save a longer workout. Edit mode seeds paused.
+
+**Status-bar icons** were light on the cream AppBar (iOS infers contrast; Android needs `systemOverlayStyle`).
+
+`flutter test integration_test/…` on Android **reinstalls the APK on every run, wiping app data** (observed: run 2 of the same entrypoint printed `Installing …app-debug.apk` and the prefs marker was gone). Cross-launch persistence therefore cannot be asserted through that harness; the process-death check is done against a real debug build driven by `adb` with `am force-stop`. The flow suite itself passed unchanged on Android 17 — the v1→v3 ladder on `sqflite_android`, keyboard insets on the log-set row and rest sheet, and every bundled font weight. No platform conditional was needed in `lib/`.
+
+## 7. What I'd do next
 
 `HistoryBloc` (above). Rest days as rows so "Longest run" and the streak card can share one definition (BUG-09 reconciliation) and the calendar can draw real rest-day markers. Bundle fonts (BUG-21). `CHECK (reps > 0)` constraints — needs a table rebuild, so a v3 step.

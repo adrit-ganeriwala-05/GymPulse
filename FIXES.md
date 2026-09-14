@@ -76,5 +76,17 @@ Tests: 5 datasource cases incl. **v1 → v2 migration on a hand-built v1 file**,
 7. **BUG-21 — fixed** (above).
 New tests: +2 streak, +2 datasource, +3 bloc → **46 unit/bloc**. One integration run.
 
+## Round 3 (pause flag · Android · coverage)
+**1 · Pause flag — fixed.** Schema v3 `timer_paused`; `WorkoutDraft` carries it; every checkpoint and mutation snapshot writes it; `WorkoutTimerStarted(paused:)` seeds `WorkoutTimerPausedState` directly. Stopped is persisted as paused. Snapshot audit: rest-timer countdown (dropped, seconds-scale), unsubmitted input/open forms (UI-only), weight unit (own pref) — nothing else resumes differently. Found while walking Android: **edit mode ran the clock** from the saved duration — same class; now seeds paused.
+**2 · Android — what broke that iOS didn't.**
+- **System back on `/active` exited the app.** go_router 13 `popRoute` never calls `maybePop` at a root route (`delegate.dart:59`), so `PopScope` was bypassed. `/active` is now nested under `/`; Home refreshes via `RouteObserver.didPopNext`. No `lib/` platform conditional — a routing-structure fix that applies everywhere.
+- **Status-bar icons** light-on-cream: `AppBarTheme.systemOverlayStyle = dark`. The one Android-only line.
+- **Harness limit:** `flutter test integration_test/…` reinstalls the APK on Android every run (observed `Installing …` on run 2 of the same file; prefs marker gone), wiping data. Process death was therefore verified against a real debug build via `adb`: `am force-stop` mid-session → relaunch → banner `1 exercises · 00:55 active` → Resume → **paused at 00:55**, 5 s later still 00:55, set intact. `draft_death_test.dart` is kept as the in-process seed/resume script but cannot prove persistence under this harness — documented in the file.
+- Passed unchanged on Android 17: full flow from a hand-seeded v1 DB (v1→v3 ladder on `sqflite_android`), keyboard insets on the log-set row and rest sheet, every bundled font weight, predictive/system back out of edit → confirm dialog.
+- **Final runs (one each):** Android emulator (Pixel 9 Pro XL, Android 17) → `00:30 +1: All tests passed!` · iOS simulator (iPhone 17 Pro, iOS 26.3) → `00:31 +1: All tests passed!`. `flutter analyze` → `No issues found!` · `flutter test` → `+90: All tests passed!`
+- **Nothing remains broken that I know of.**
+**3 · Coverage — 90 tests** (was 39): datasources 35 (streak 23 · workout/SQLite 12) · repositories 3 · domain stats 8 · blocs 23 (Workout 12 · WorkoutTimer 7 · RestTimer 4) · screens 15 (Active 7 · Home 4 · History 2 · Onboarding 2) · widgets 2 · units/settings 3 · placeholder 1. Each names its bug (see commit `134397d`).
+**Still untested, and why:** `CalendarScreen` (table_calendar rendering; the only logic — `groupByDay` — is covered in domain); `StreakBloc` itself (three passthrough handlers; the datasource beneath has 23 cases); `LoadErrorView` in isolation (covered via History); go_router redirect (would need a router harness; covered by both device runs); the rest-timer sheet's auto-close on finish (timing-dependent; the bloc's finish transition is unit-tested).
+
 ## Spend
-Approximate, from token volume: Stage 1 $7 · Stage 2 $9 · Stage 3 $16 · Stage 4 $24 · Stage 5 $33 · Stage 6 $52 · Stage 7 (8 simulator runs) + docs ≈ $70. Round 2 (one simulator run) ≈ $12 → **≈ $82 total**. No checkpoint tripped.
+Approximate, from token volume: Stage 1 $7 · Stage 2 $9 · Stage 3 $16 · Stage 4 $24 · Stage 5 $33 · Stage 6 $52 · Stage 7 (8 simulator runs) + docs ≈ $70. Round 2 ≈ $12 → ≈ $82. Round 3 (2 emulator + 2 simulator runs, ~20 screenshots) ≈ $30 → **≈ $112 total, token-volume estimate; no console access from this session**.
