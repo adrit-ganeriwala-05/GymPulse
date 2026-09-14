@@ -22,7 +22,6 @@ A clean, minimal workout tracking app built with Flutter.
 - **shared_preferences** — lightweight persistent storage
 - **table_calendar** — calendar widget
 - **google_fonts** — Playfair Display + DM Sans typography
-- **flutter_animate** — UI animations
 
 ## Architecture
 
@@ -34,6 +33,11 @@ lib/
 ├── domain/         # Entities, repository interfaces, use cases
 └── presentation/   # Screens, widgets, BLoCs
 ```
+
+## Platforms
+
+Android, iOS, macOS. (Web/Windows/Linux scaffolds were removed: sqflite has
+no implementation there and the app cannot persist anything.)
 
 ## Getting Started
 
