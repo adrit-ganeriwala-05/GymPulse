@@ -89,6 +89,23 @@ void main() {
     });
   });
 
+  test('stop while paused keeps the reading; double pause is a no-op (AUDIT2-01)', () {
+    fakeAsync((async) {
+      final b = WorkoutTimerBloc()..add(const WorkoutTimerStarted(from: 750));
+      async.elapse(const Duration(seconds: 4));
+      b
+        ..add(const WorkoutTimerPaused())
+        ..add(const WorkoutTimerPaused());
+      async.flushMicrotasks();
+      expect(b.state, const WorkoutTimerPausedState(754));
+      b.add(const WorkoutTimerStopped());
+      async.flushMicrotasks();
+      expect(b.state, const WorkoutTimerStoppedState(754),
+          reason: 'stop must not zero a paused clock');
+      b.close();
+    });
+  });
+
   test('close() cancels the subscription; no ticks after close', () {
     fakeAsync((async) {
       final b = WorkoutTimerBloc()..add(const WorkoutTimerStarted());

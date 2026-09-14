@@ -40,16 +40,22 @@ class WorkoutTimerBloc extends Bloc<WorkoutTimerEvent, WorkoutTimerState> {
     emit(WorkoutTimerRunningState(event.seconds));
   }
 
+  /// The clock's current reading whether it is running or paused. Reading
+  /// only from the running state zeroed a paused clock on Stop/Pause, which
+  /// the save-retry path, edit mode and the draft checkpoint all rely on.
+  int get _seconds => switch (state) {
+        WorkoutTimerRunningState s => s.seconds,
+        WorkoutTimerPausedState s => s.seconds,
+        WorkoutTimerStoppedState s => s.seconds,
+        _ => 0,
+      };
+
   void _onStopped(
     WorkoutTimerStopped event,
     Emitter<WorkoutTimerState> emit,
   ) {
     _subscription?.cancel();
-    final seconds =
-        state is WorkoutTimerRunningState
-            ? (state as WorkoutTimerRunningState).seconds
-            : 0;
-    emit(WorkoutTimerStoppedState(seconds));
+    emit(WorkoutTimerStoppedState(_seconds));
   }
 
   void _onReset(
@@ -64,11 +70,11 @@ class WorkoutTimerBloc extends Bloc<WorkoutTimerEvent, WorkoutTimerState> {
     WorkoutTimerPaused event,
     Emitter<WorkoutTimerState> emit,
   ) {
+    // Only a running clock can be paused; a second Pause (double tap before
+    // the button swaps to Resume) must not reset the reading.
+    if (state is! WorkoutTimerRunningState) return;
     _subscription?.cancel();
-    final seconds = state is WorkoutTimerRunningState
-        ? (state as WorkoutTimerRunningState).seconds
-        : 0;
-    emit(WorkoutTimerPausedState(seconds));
+    emit(WorkoutTimerPausedState(_seconds));
   }
 
   void _onResumed(

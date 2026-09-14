@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:get_it/get_it.dart';
+import 'package:go_router/go_router.dart';
 import 'package:gympulse/domain/entities/exercise.dart';
 import 'package:gympulse/domain/entities/workout.dart';
 import 'package:gympulse/domain/entities/workout_draft.dart';
@@ -145,21 +146,28 @@ WorkoutBloc makeWorkoutBloc(FakeWorkoutRepo repo, FakeStreakRepo streak) => Work
 Widget activeScreenHarness(Widget child, FakeWorkoutRepo repo, FakeStreakRepo streak,
     {WorkoutEvent start = const WorkoutStarted()}) {
   final settings = FakeSettingsRepo();
-  return MaterialApp(
-      home: MultiBlocProvider(
-        providers: [
-          BlocProvider(create: (_) => makeWorkoutBloc(repo, streak)..add(start)),
-          BlocProvider(create: (_) => WorkoutTimerBloc()),
-          BlocProvider(create: (_) => RestTimerBloc()),
-          BlocProvider(
-            create: (_) => SettingsBloc(
-              getWeightUnit: GetWeightUnit(settings),
-              saveWeightUnit: SaveWeightUnit(settings),
-            )..add(const SettingsLoaded()),
-          ),
-        ],
-        child: child,
+  // A one-route GoRouter so the screen's `context.go('/')` on a successful
+  // save resolves (to the same route) instead of asserting.
+  return MaterialApp.router(
+    routerConfig: GoRouter(routes: [
+      GoRoute(
+        path: '/',
+        builder: (_, __) => MultiBlocProvider(
+          providers: [
+            BlocProvider(create: (_) => makeWorkoutBloc(repo, streak)..add(start)),
+            BlocProvider(create: (_) => WorkoutTimerBloc()),
+            BlocProvider(create: (_) => RestTimerBloc()),
+            BlocProvider(
+              create: (_) => SettingsBloc(
+                getWeightUnit: GetWeightUnit(settings),
+                saveWeightUnit: SaveWeightUnit(settings),
+              )..add(const SettingsLoaded()),
+            ),
+          ],
+          child: child,
+        ),
       ),
+    ]),
   );
 }
 

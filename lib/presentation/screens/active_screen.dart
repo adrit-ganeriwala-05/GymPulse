@@ -102,8 +102,8 @@ class _ActiveBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // Start the stopwatch once, when the session first becomes known, seeded
-    // with whatever has already elapsed (0 for new, wall-clock delta for a
-    // resumed draft, saved duration for an edit).
+    // with whatever has already elapsed (0 for new, the persisted
+    // elapsedSeconds for a resumed draft, saved duration for an edit).
     return BlocListener<WorkoutBloc, WorkoutState>(
       listenWhen: (prev, cur) =>
           cur is WorkoutInProgressState &&
@@ -123,10 +123,12 @@ class _ActiveBody extends StatelessWidget {
         // Checkpoint the stopwatch into the draft every 10 s and whenever it
         // pauses/stops, so a kill loses at most 10 s of active time.
         // Also on the pause->running edge so the paused flag clears at once
-        // rather than at the next 10 s tick.
+        // rather than at the next 10 s tick, and on Reset (Initial) so a kill
+        // after Reset does not resume at the value the user just cleared.
         listenWhen: (prev, cur) =>
             cur is WorkoutTimerPausedState ||
             cur is WorkoutTimerStoppedState ||
+            cur is WorkoutTimerInitialState ||
             (cur is WorkoutTimerRunningState &&
                 (cur.seconds % 10 == 0 || prev is! WorkoutTimerRunningState)),
         listener: (ctx, state) {
@@ -854,7 +856,9 @@ class _FinishButtonState extends State<_FinishButton> {
       WorkoutTimerStoppedState s => s.seconds,
       _ => 0,
     };
-    context.read<WorkoutTimerBloc>().add(const WorkoutTimerStopped());
+    // The timer is deliberately not stopped here: on success the route is
+    // disposed and the bloc closes; on failure the clock keeps its reading
+    // (and keeps running) so a retry saves the true elapsed time.
     context.read<WorkoutBloc>().add(WorkoutFinished(durationSeconds: duration));
   }
 

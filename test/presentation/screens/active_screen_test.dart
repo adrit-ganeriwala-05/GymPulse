@@ -133,4 +133,29 @@ void main() {
     expect(find.text('12:34'), findsOneWidget, reason: 'paused clock does not accrue');
     await tester.pumpWidget(const SizedBox());
   });
+
+  testWidgets('save fails → retry still saves the original duration (AUDIT2-01)', (tester) async {
+    final saved = Workout(id: 'w', date: DateTime(2025, 5, 1), durationSeconds: 1500,
+        exercises: const [Exercise(name: 'Row', sets: [ExerciseSet(reps: 10, weight: 40)])]);
+    tester.view.physicalSize = const Size(400, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    repo.failWrites = true;
+    await tester.pumpWidget(activeScreenHarness(const ActiveScreen(), repo, streak,
+        start: WorkoutEditStarted(saved)));
+    await tester.pump();
+    await tester.tap(find.text('Finish Workout ✓'));
+    await tester.pump();
+    await tester.tap(find.text('Save & Finish'));
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(find.text('Failed to save workout'), findsOneWidget);
+    expect(find.text('25:00'), findsOneWidget, reason: 'clock reading survives a failed save');
+    repo.failWrites = false;
+    await tester.tap(find.text('Finish Workout ✓'));
+    await tester.pump();
+    await tester.tap(find.text('Save & Finish'));
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(repo.done['w']!.durationSeconds, 1500, reason: 'retry must not save 0');
+    await tester.pumpWidget(const SizedBox());
+  });
 }
