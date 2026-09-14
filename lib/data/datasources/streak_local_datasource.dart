@@ -10,13 +10,18 @@ abstract class StreakLocalDatasource {
 class StreakLocalDatasourceImpl implements StreakLocalDatasource {
   final SharedPreferences prefs;
 
+  /// Injectable clock so date arithmetic is testable without touching the
+  /// wall clock. Defaults to DateTime.now.
+  final DateTime Function() now;
+
   static const _streakKey = 'streak_count';
   static const _lastWorkoutDateKey = 'last_workout_date';
   static const _restDaysRemainingKey = 'rest_days_remaining';
   static const _weekStartDateKey = 'week_start_date';
   static const _lastRestDayKey = 'last_rest_day_date';
 
-  StreakLocalDatasourceImpl(this.prefs);
+  StreakLocalDatasourceImpl(this.prefs, {DateTime Function()? clock})
+      : now = clock ?? DateTime.now;
 
   @override
   Future<int> getStreak() async => prefs.getInt(_streakKey) ?? 0;
@@ -29,7 +34,7 @@ class StreakLocalDatasourceImpl implements StreakLocalDatasource {
 
   @override
   Future<void> updateStreak() async {
-    final now = DateTime.now();
+    final now = this.now();
     final today = DateTime(now.year, now.month, now.day);
     final lastDateStr = prefs.getString(_lastWorkoutDateKey);
     final currentStreak = prefs.getInt(_streakKey) ?? 0;
@@ -60,7 +65,7 @@ class StreakLocalDatasourceImpl implements StreakLocalDatasource {
   Future<void> markRestDay() async {
     await _initWeekIfNeeded();
 
-    final now = DateTime.now();
+    final now = this.now();
     final today = DateTime(now.year, now.month, now.day);
 
     // Bug 4: validate today is within the current tracked week
@@ -89,7 +94,7 @@ class StreakLocalDatasourceImpl implements StreakLocalDatasource {
   }
 
   Future<void> _initWeekIfNeeded() async {
-    final now = DateTime.now();
+    final now = this.now();
     final today = DateTime(now.year, now.month, now.day);
     final weekStartStr = prefs.getString(_weekStartDateKey);
 
