@@ -13,6 +13,9 @@ import 'presentation/router.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   Bloc.observer = const AppBlocObserver();
+  // Fonts are bundled under assets/fonts; fail loudly if one is missing
+  // rather than silently falling back after a network attempt (BUG-21).
+  GoogleFonts.config.allowRuntimeFetching = false;
   // Chain, don't replace: the default presents the error; the test binding
   // installs its own handler and asserts it is still in place.
   final previousOnError = FlutterError.onError;

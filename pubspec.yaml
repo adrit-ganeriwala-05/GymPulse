@@ -33,3 +33,7 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  # Bundled so first launch works offline (BUG-21). google_fonts resolves
+  # Family-Variant.ttf from the asset manifest before ever touching the network.
+  assets:
+    - assets/fonts/
