@@ -69,7 +69,10 @@ class FakeWorkoutRepo implements WorkoutRepository {
     return draft == null ? null : WorkoutDraft(workout: draft!, timerPaused: draftPaused);
   }
   @override
-  Future<void> deleteWorkout(String id) async { deleted.add(id); done.remove(id); if (draft?.id == id) draft = null; }
+  Future<void> deleteWorkout(String id) async {
+    if (failWrites) throw StateError('disk full');
+    deleted.add(id); done.remove(id); if (draft?.id == id) draft = null;
+  }
   @override
   Future<void> recordDraftElapsed(String draftId, int elapsedSeconds, {required bool paused}) async {
     draftPaused = paused;

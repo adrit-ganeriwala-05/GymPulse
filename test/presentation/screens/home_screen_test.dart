@@ -97,4 +97,17 @@ void main() {
     expect(find.textContaining('Mark Rest Day'), findsNothing,
         reason: 'datasource refuses a second rest today, so the button must not offer it');
   });
+
+  testWidgets('Discard failure keeps the banner and says so; future start date clamps to 0 (A2-05/06)', (tester) async {
+    repo.draft = sampleWorkout(id: 'd', date: DateTime.now().add(const Duration(minutes: 30)));
+    repo.failWrites = true;
+    await tester.pumpWidget(homeHarness(const HomeScreen(), streak));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('started 0 min ago'), findsOneWidget);
+    await tester.tap(find.text('Discard'));
+    await tester.pumpAndSettle();
+    expect(find.text('Could not discard draft'), findsOneWidget);
+    expect(find.text('Workout in progress'), findsOneWidget, reason: 'row still exists');
+    expect(tester.takeException(), isNull);
+  });
 }

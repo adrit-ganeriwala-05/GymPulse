@@ -84,12 +84,25 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
   Future<void> _discardDraft() async {
     final d = _draft;
     if (d == null) return;
-    await sl<DiscardDraft>().call(d.id);
+    try {
+      await sl<DiscardDraft>().call(d.id);
+    } catch (_) {
+      // Banner stays: the row is still there. Say so instead of throwing
+      // out of the tap handler (A2-05).
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not discard draft')),
+        );
+      }
+      return;
+    }
     if (mounted) setState(() => _draft = null);
   }
 
   String _ago(DateTime then) {
-    final d = DateTime.now().difference(then);
+    // Clamp: a clock set backwards must not render "-30 min ago" (A2-06).
+    var d = DateTime.now().difference(then);
+    if (d.isNegative) d = Duration.zero;
     if (d.inMinutes < 60) return '${d.inMinutes} min ago';
     if (d.inHours < 24) return '${d.inHours} h ago';
     return '${d.inDays} day${d.inDays == 1 ? '' : 's'} ago';
