@@ -4,6 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gympulse/domain/entities/exercise.dart';
 import 'package:gympulse/domain/entities/workout.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:gympulse/presentation/blocs/rest_timer/rest_timer_bloc.dart';
+import 'package:gympulse/presentation/blocs/rest_timer/rest_timer_event.dart';
+import 'package:gympulse/presentation/blocs/rest_timer/rest_timer_state.dart';
 import 'package:gympulse/presentation/blocs/workout/workout_event.dart';
 import 'package:gympulse/presentation/screens/active_screen.dart';
 
@@ -156,6 +160,35 @@ void main() {
     await tester.tap(find.text('Save & Finish'));
     await tester.pump(const Duration(milliseconds: 50));
     expect(repo.done['w']!.durationSeconds, 1500, reason: 'retry must not save 0');
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('rest timer runs out → sheet closes, bloc reset, no stray ticks', (tester) async {
+    await pumpActive(tester);
+    await addBench(tester);
+    await tester.tap(find.text('Log Set'));
+    await tester.pump();
+    await tester.enterText(labelled('Reps'), '10');
+    await tester.enterText(labelled('kg'), '100');
+    await tester.tap(find.byIcon(Icons.check_circle));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text('Rest Timer'), findsOneWidget);
+    final bloc = BlocProvider.of<RestTimerBloc>(tester.element(find.byType(ActiveScreen)));
+
+    // Start the countdown through the bloc: under the Ahem test font the
+    // sheet's Start button lays out below the fold (test 3 covers the button).
+    bloc.add(const RestTimerStarted(60));
+    await tester.pump();
+    expect(bloc.state, isA<RestTimerRunningState>());
+    await tester.pump(const Duration(seconds: 61)); // natural finish
+    await tester.pump(); // post-frame pop
+    await tester.pump(const Duration(milliseconds: 400)); // sheet dismiss + snackbar delay
+    expect(find.text('Rest Timer'), findsNothing, reason: 'sheet auto-closed');
+    expect(find.text('Rest complete! Time to work 💪'), findsOneWidget);
+    expect(bloc.state, const RestTimerInitialState(60), reason: 'whenComplete → RestTimerReset');
+    await tester.pump(const Duration(seconds: 5));
+    expect(bloc.state, const RestTimerInitialState(60), reason: 'subscription gone: no stray ticks');
     await tester.pumpWidget(const SizedBox());
   });
 }

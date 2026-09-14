@@ -3,6 +3,8 @@ import 'package:gympulse/data/datasources/streak_local_datasource.dart';
 import 'package:gympulse/domain/streak_rules.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../helpers/tz.dart';
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -24,9 +26,14 @@ void main() {
   group('civil date helpers', () {
     test('civilDaysBetween is DST-safe on the spring-forward pair', () {
       // US DST: Mar 9 2025 02:00 -> 03:00. Two local midnights are 23h apart,
-      // so Duration.inDays would report 0. In a non-DST test TZ the pair is
-      // simply 24h apart; the assertion holds either way.
+      // so Duration.inDays reports 0. The zone is set here, not inherited,
+      // so this fails against the old arithmetic on any host (A2-07).
+      final restore = withTimeZone('America/New_York');
+      addTearDown(restore);
+      expect(DateTime(2025, 3, 10).difference(DateTime(2025, 3, 9)).inHours, 23,
+          reason: 'the zone must really have the gap, or this test proves nothing');
       expect(civilDaysBetween(DateTime(2025, 3, 9), DateTime(2025, 3, 10)), 1);
+      expect(DateTime(2025, 11, 3).difference(DateTime(2025, 11, 2)).inHours, 25);
       expect(civilDaysBetween(DateTime(2025, 11, 2), DateTime(2025, 11, 3)), 1);
     });
 
@@ -103,12 +110,27 @@ void main() {
       expect(await ds.getStreak(), 0);
     });
 
-    test('DST spring-forward pair increments (BUG-03)', () async {
+    test('DST spring-forward: consecutive days chain, a 47 h two-day gap still lapses (BUG-03)', () async {
+      // Same-day detection uses isSameCivilDay, so the increment across the
+      // gap would pass even with `inDays`; the lapse boundary is what depends
+      // on civilDaysBetween (Mar 8 -> Mar 10 is 47 h: inDays says 1, alive).
+      final restore = withTimeZone('America/New_York');
+      addTearDown(restore);
+      expect(DateTime(2025, 3, 10).difference(DateTime(2025, 3, 9)).inHours, 23);
       clock = DateTime(2025, 3, 9);
       await ds.updateStreak();
       clock = DateTime(2025, 3, 10);
       await ds.updateStreak();
       expect(await ds.getStreak(), 2);
+
+      SharedPreferences.setMockInitialValues({});
+      prefs = await SharedPreferences.getInstance();
+      ds = StreakLocalDatasourceImpl(prefs, clock: () => clock);
+      clock = DateTime(2025, 3, 8);
+      await ds.updateStreak();
+      clock = DateTime(2025, 3, 10);
+      expect(await ds.getStreak(), 0, reason: 'two civil days apart: lapsed');
+      expect(await ds.canMarkRestDay(), isFalse);
     });
 
     test('legacy install: last_workout_date alone seeds continuity', () async {

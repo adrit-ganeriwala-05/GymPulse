@@ -3,6 +3,8 @@ import 'package:gympulse/domain/entities/exercise.dart';
 import 'package:gympulse/domain/entities/workout.dart';
 import 'package:gympulse/domain/workout_stats.dart';
 
+import '../helpers/tz.dart';
+
 Workout w(String id, DateTime date, {List<ExerciseSet> sets = const []}) =>
     Workout(id: id, date: date, durationSeconds: 0, exercises: [
       Exercise(name: 'X', sets: sets),
@@ -35,6 +37,9 @@ void main() {
   });
 
   test('longest run survives the DST spring-forward pair (BUG-03)', () {
+    final restore = withTimeZone('America/New_York');
+    addTearDown(restore);
+    expect(DateTime(2025, 3, 10).difference(DateTime(2025, 3, 9)).inHours, 23);
     expect(longestRun([w('a', DateTime(2025, 3, 9, 8)), w('b', DateTime(2025, 3, 10, 8))]), 2);
   });
 
