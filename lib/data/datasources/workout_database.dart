@@ -3,31 +3,40 @@ import 'package:path/path.dart';
 
 class WorkoutDatabase {
   static final WorkoutDatabase instance = WorkoutDatabase._init();
-  static Database? _database;
+
+  // Cache the *future*, not the resolved value. `??=` assigns synchronously
+  // before any await can interleave, so concurrent first callers share one
+  // in-flight open instead of each calling openDatabase (BUG-12).
+  static Future<Database>? _databaseFuture;
 
   WorkoutDatabase._init();
 
-  Future<Database> get database async {
-    if (_database != null) return _database!;
-    _database = await _initDB('gympulse.db');
-    return _database!;
-  }
+  Future<Database> get database => _databaseFuture ??= _initDB('gympulse.db')
+      .catchError((Object e, StackTrace s) {
+        // Don't cache a failed open; let the next caller retry.
+        _databaseFuture = null;
+        throw e;
+      });
 
   Future<Database> _initDB(String filePath) async {
     final dbPath = await getDatabasesPath();
     final path = join(dbPath, filePath);
-    final db = await openDatabase(
+    return openDatabase(
       path,
       version: 1,
+      onConfigure: _onConfigure,
       onCreate: _createDB,
     );
-    await db.execute('PRAGMA foreign_keys = ON');
-    return db;
   }
 
-  Future<void> _createDB(Database db, int version) async {
-    await db.execute('PRAGMA foreign_keys = ON');
+  // onConfigure runs on every open, before onCreate/onUpgrade, and outside
+  // their transaction. PRAGMA foreign_keys is a silent no-op inside a
+  // transaction, so this is the only hook where it reliably takes effect
+  // (BUG-05) — including during future migrations.
+  Future<void> _onConfigure(Database db) =>
+      db.execute('PRAGMA foreign_keys = ON');
 
+  Future<void> _createDB(Database db, int version) async {
     await db.execute('''
       CREATE TABLE workouts (
         id TEXT PRIMARY KEY,
@@ -63,7 +72,10 @@ class WorkoutDatabase {
   }
 
   Future<void> close() async {
-    final db = await instance.database;
-    db.close();
+    final pending = _databaseFuture;
+    if (pending == null) return;
+    _databaseFuture = null;
+    final db = await pending;
+    await db.close();
   }
 }
