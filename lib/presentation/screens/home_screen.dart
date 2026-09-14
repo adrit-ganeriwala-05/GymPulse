@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../domain/entities/workout.dart';
+import '../../domain/streak_rules.dart';
 import '../../domain/usecases/get_workouts.dart';
 import '../../injection_container.dart';
 import '../blocs/streak/streak_bloc.dart';
@@ -70,24 +71,28 @@ class _HomeScreenState extends State<HomeScreen> {
           final thisMonth = workouts
               .where((w) => w.date.month == now.month && w.date.year == now.year)
               .length;
-          final thisWeek = workouts.where((w) {
-            final diff = now.difference(w.date).inDays;
-            return diff < 7;
-          }).length;
-          final weekProgress = (thisWeek / 5).clamp(0.0, 1.0);
+          // Calendar week (Mon-Sun), same definition the rest-day allowance uses.
+          final weekStart = startOfWeek(now);
+          final thisWeek = workouts
+              .map((w) => civilDate(w.date))
+              .toSet()
+              .where((d) => !d.isBefore(weekStart))
+              .length;
+          final weekProgress =
+              (thisWeek / kTrainingDaysPerWeek).clamp(0.0, 1.0);
+          final trainedToday = workouts.any((w) => isSameCivilDay(w.date, now));
 
-          int bestStreak = 0;
+          // Longest run of consecutive *workout* days. Deliberately not called
+          // a "streak": the streak card counts rest days as bridging, this
+          // tile cannot see rest days. Reconciliation is deferred (BUG-09).
+          int longestRun = 0;
           int cur = 0;
           DateTime? last;
-          final sorted = [...workouts]..sort((a, b) => a.date.compareTo(b.date));
-          for (final w in sorted) {
-            final day = DateTime(w.date.year, w.date.month, w.date.day);
-            if (last == null || day.difference(last).inDays == 1) {
-              cur++;
-            } else if (day.difference(last).inDays > 1) {
-              cur = 1;
-            }
-            if (cur > bestStreak) bestStreak = cur;
+          final days = workouts.map((w) => civilDate(w.date)).toSet().toList()
+            ..sort();
+          for (final day in days) {
+            cur = (last != null && civilDaysBetween(last, day) == 1) ? cur + 1 : 1;
+            if (cur > longestRun) longestRun = cur;
             last = day;
           }
 
@@ -134,7 +139,7 @@ class _HomeScreenState extends State<HomeScreen> {
               BlocBuilder<StreakBloc, StreakState>(
                 builder: (context, state) {
                   final streak = state is StreakLoadedState ? state.currentStreak : 0;
-                  final restDays = state is StreakLoadedState ? state.restDaysRemaining : 2;
+                  final restDays = state is StreakLoadedState ? state.restDaysRemaining : 0;
                   return Card(
                     child: Padding(
                       padding: const EdgeInsets.all(20),
@@ -194,14 +199,16 @@ class _HomeScreenState extends State<HomeScreen> {
                           Align(
                             alignment: Alignment.centerRight,
                             child: Text(
-                              '$thisWeek / 5 days this week',
+                              '$thisWeek / $kTrainingDaysPerWeek days this week',
                               style: GoogleFonts.dmSans(
                                 fontSize: 12,
                                 color: const Color(0xFF8B7355),
                               ),
                             ),
                           ),
-                          if (restDays > 0) ...[
+                          // Datasource enforces this too; hiding the button
+                          // just makes the rule discoverable.
+                          if (restDays > 0 && streak > 0 && !trainedToday) ...[
                             const SizedBox(height: 12),
                             OutlinedButton.icon(
                               onPressed: () => context
@@ -243,7 +250,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 children: [
                   _StatCard(label: 'This Month', value: '$thisMonth'),
                   const SizedBox(width: 8),
-                  _StatCard(label: 'Best Streak', value: '$bestStreak'),
+                  _StatCard(label: 'Longest run', value: '$longestRun'),
                   const SizedBox(width: 8),
                   _StatCard(label: 'This Week', value: '$thisWeek'),
                 ],
