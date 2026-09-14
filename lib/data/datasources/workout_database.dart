@@ -77,7 +77,7 @@ class WorkoutDatabase {
         id TEXT PRIMARY KEY,
         exercise_id TEXT NOT NULL,
         reps INTEGER NOT NULL,
-        weight REAL NOT NULL,
+        weight REAL NOT NULL,        -- kilograms, always (see BUG-01)
         position INTEGER NOT NULL DEFAULT 0,
         FOREIGN KEY (exercise_id)
           REFERENCES exercises(id)

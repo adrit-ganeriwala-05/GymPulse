@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../domain/entities/exercise.dart';
+import '../units.dart';
 
 class ExerciseLogCard extends StatefulWidget {
   final Exercise exercise;
@@ -75,7 +76,7 @@ class _ExerciseLogCardState extends State<ExerciseLogCard> {
       return;
     }
 
-    widget.onAddSet(reps!, weight!);
+    widget.onAddSet(reps!, displayToKg(weight!, widget.weightUnit));
     _repsCtrl.clear();
     _weightCtrl.clear();
     setState(() {
@@ -130,7 +131,7 @@ class _ExerciseLogCardState extends State<ExerciseLogCard> {
                             Expanded(
                               child: Text(
                                 // FIX: use weightUnit instead of hardcoded 'kg'
-                                'Set ${e.key + 1}  ${e.value.reps} reps  ×  ${e.value.weight} ${widget.weightUnit}',
+                                'Set ${e.key + 1}  ${e.value.reps} reps  ×  ${formatWeight(e.value.weight, widget.weightUnit)} ${widget.weightUnit}',
                                 style: GoogleFonts.dmSans(
                                   color: const Color(0xFF4A3728),
                                   fontSize: 14,

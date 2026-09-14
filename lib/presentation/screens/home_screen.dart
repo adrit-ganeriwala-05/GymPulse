@@ -10,6 +10,7 @@ import '../../injection_container.dart';
 import '../blocs/streak/streak_bloc.dart';
 import '../blocs/streak/streak_event.dart';
 import '../blocs/streak/streak_state.dart';
+import '../widgets/load_error_view.dart';
 import '../widgets/workout_summary_card.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -22,21 +23,18 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   String _userName = 'Athlete';
-  Future<List<Workout>>? _workoutsFuture;
+  late Future<List<Workout>> _workoutsFuture;
 
+  // One-shot loads belong in initState. StreakLoaded is dispatched by the
+  // route's BlocProvider (router.dart), not here — one owner (BUG-14).
   @override
   void initState() {
     super.initState();
-    final name = sl<SharedPreferences>().getString('user_name') ?? 'Athlete';
-    _userName = name;
+    _userName = sl<SharedPreferences>().getString('user_name') ?? 'Athlete';
+    _workoutsFuture = sl<GetWorkouts>().call();
   }
 
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _workoutsFuture = sl<GetWorkouts>().call();
-    context.read<StreakBloc>().add(const StreakLoaded());
-  }
+  void _reload() => setState(() => _workoutsFuture = sl<GetWorkouts>().call());
 
   // FIX: greeting changed from time-of-day to "Welcome, name 👋" per spec
   String _greeting() => 'Welcome, $_userName 👋';
@@ -65,7 +63,11 @@ class _HomeScreenState extends State<HomeScreen> {
       body: FutureBuilder<List<Workout>>(
         future: _workoutsFuture,
         builder: (context, snapshot) {
-          final workouts = snapshot.data ?? [];
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return Center(child: CircularProgressIndicator(color: cs.primary));
+          }
+          if (snapshot.hasError) return LoadErrorView(onRetry: _reload);
+          final workouts = snapshot.data ?? const <Workout>[];
           final now = DateTime.now();
 
           final thisMonth = workouts

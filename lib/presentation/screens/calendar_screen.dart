@@ -7,6 +7,8 @@ import 'package:table_calendar/table_calendar.dart';
 import '../../domain/entities/workout.dart';
 import '../../domain/usecases/get_workouts.dart';
 import '../../injection_container.dart';
+import '../units.dart';
+import '../widgets/load_error_view.dart';
 
 class CalendarScreen extends StatefulWidget {
   const CalendarScreen({super.key});
@@ -16,13 +18,15 @@ class CalendarScreen extends StatefulWidget {
 }
 
 class _CalendarScreenState extends State<CalendarScreen> {
-  late final Future<List<Workout>> _workoutsFuture;
+  late Future<List<Workout>> _workoutsFuture;
 
   @override
   void initState() {
     super.initState();
     _workoutsFuture = sl<GetWorkouts>().call();
   }
+
+  void _reload() => setState(() => _workoutsFuture = sl<GetWorkouts>().call());
 
   @override
   Widget build(BuildContext context) {
@@ -54,7 +58,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
-          final workouts = snapshot.data ?? [];
+          if (snapshot.hasError) return LoadErrorView(onRetry: _reload);
+          final workouts = snapshot.data ?? const <Workout>[];
           final workoutsByDay = <DateTime, List<Workout>>{};
           for (final w in workouts) {
             final key = DateTime(w.date.year, w.date.month, w.date.day);
@@ -338,7 +343,7 @@ class _WorkoutDetailSheet extends StatelessWidget {
                                 ),
                               ),
                               Text(
-                                '${w.exercises.length} exercises · $totalSets sets · ${totalVolume.toStringAsFixed(0)} $weightUnit',
+                                '${w.exercises.length} exercises · $totalSets sets · ${formatWeight(totalVolume, weightUnit, decimals: 0)} $weightUnit',
                                 style: GoogleFonts.dmSans(
                                   color: const Color(0xFF8B7355),
                                   fontSize: 13,
@@ -362,7 +367,7 @@ class _WorkoutDetailSheet extends StatelessWidget {
                                     ),
                                     const SizedBox(height: 4),
                                     ...exercise.sets.asMap().entries.map((e) => Text(
-                                          'Set ${e.key + 1}: ${e.value.reps} reps × ${e.value.weight} $weightUnit',
+                                          'Set ${e.key + 1}: ${e.value.reps} reps × ${formatWeight(e.value.weight, weightUnit)} $weightUnit',
                                           style: GoogleFonts.dmSans(
                                             color: const Color(0xFF4A3728),
                                             fontSize: 14,

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../domain/entities/workout.dart';
+import '../units.dart';
 
 class WorkoutSummaryCard extends StatefulWidget {
   final Workout workout;
@@ -71,7 +72,7 @@ class _WorkoutSummaryCardState extends State<WorkoutSummaryCard> {
                             _chip('⏱ ${_formatDuration(widget.workout.durationSeconds)}'),
                             _chip('🏋 ${widget.workout.exercises.length} exercises'),
                             // FIX: show unit next to volume
-                            _chip('📦 ${_totalVolume.toStringAsFixed(0)} ${widget.weightUnit}'),
+                            _chip('📦 ${formatWeight(_totalVolume, widget.weightUnit, decimals: 0)} ${widget.weightUnit}'),
                           ],
                         ),
                       ],
@@ -102,7 +103,7 @@ class _WorkoutSummaryCardState extends State<WorkoutSummaryCard> {
                           const SizedBox(height: 4),
                           ...exercise.sets.asMap().entries.map((e) => Text(
                                 // FIX: use weightUnit not hardcoded 'kg'
-                                'Set ${e.key + 1}: ${e.value.reps} reps × ${e.value.weight} ${widget.weightUnit}',
+                                'Set ${e.key + 1}: ${e.value.reps} reps × ${formatWeight(e.value.weight, widget.weightUnit)} ${widget.weightUnit}',
                                 style: GoogleFonts.dmSans(
                                   color: const Color(0xFF4A3728),
                                   fontSize: 14,
@@ -113,7 +114,7 @@ class _WorkoutSummaryCardState extends State<WorkoutSummaryCard> {
                     )),
                 const SizedBox(height: 8),
                 Text(
-                  '${widget.workout.exercises.length} exercises · $_totalSets sets · ${_totalVolume.toStringAsFixed(0)} ${widget.weightUnit} total volume',
+                  '${widget.workout.exercises.length} exercises · $_totalSets sets · ${formatWeight(_totalVolume, widget.weightUnit, decimals: 0)} ${widget.weightUnit} total volume',
                   style: GoogleFonts.dmSans(
                     color: const Color(0xFF8B7355),
                     fontSize: 13,

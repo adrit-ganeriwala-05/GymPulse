@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../domain/entities/workout.dart';
 import '../../domain/usecases/get_workouts.dart';
 import '../../injection_container.dart';
+import '../widgets/load_error_view.dart';
 import '../widgets/workout_summary_card.dart';
 
 class HistoryScreen extends StatefulWidget {
@@ -16,13 +17,15 @@ class HistoryScreen extends StatefulWidget {
 }
 
 class _HistoryScreenState extends State<HistoryScreen> {
-  late final Future<List<Workout>> _workoutsFuture;
+  late Future<List<Workout>> _workoutsFuture;
 
   @override
   void initState() {
     super.initState();
     _workoutsFuture = sl<GetWorkouts>().call();
   }
+
+  void _reload() => setState(() => _workoutsFuture = sl<GetWorkouts>().call());
 
   @override
   Widget build(BuildContext context) {
@@ -41,7 +44,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
             );
           }
 
-          final workouts = snapshot.data ?? [];
+          if (snapshot.hasError) return LoadErrorView(onRetry: _reload);
+          final workouts = snapshot.data ?? const <Workout>[];
 
           if (workouts.isEmpty) {
             return Center(

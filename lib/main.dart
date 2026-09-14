@@ -1,13 +1,23 @@
+import 'dart:developer' as developer;
+
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:go_router/go_router.dart';
 
 import 'injection_container.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'presentation/app_bloc_observer.dart';
 import 'presentation/router.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  Bloc.observer = const AppBlocObserver();
+  FlutterError.onError = (details) {
+    FlutterError.presentError(details);
+    developer.log('Flutter error', name: 'gympulse',
+        error: details.exception, stackTrace: details.stack);
+  };
   await init();
   final onboardingComplete =
       sl<SharedPreferences>().getBool('onboarding_complete') ?? false;
