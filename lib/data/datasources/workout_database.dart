@@ -18,15 +18,30 @@ class WorkoutDatabase {
         throw e;
       });
 
+  /// Bump this when the schema changes and add a step to [_onUpgrade].
+  /// [_createDB] must produce the same shape a fully-migrated DB has.
+  static const schemaVersion = 1;
+
   Future<Database> _initDB(String filePath) async {
     final dbPath = await getDatabasesPath();
     final path = join(dbPath, filePath);
     return openDatabase(
       path,
-      version: 1,
+      version: schemaVersion,
       onConfigure: _onConfigure,
       onCreate: _createDB,
+      onUpgrade: _onUpgrade,
+      // Single-user, local-only, no sync: an app downgrade wiping the DB is
+      // preferable to an unlaunchable app. Approved in the Phase 2 brief.
+      onDowngrade: onDatabaseDowngradeDelete,
     );
+  }
+
+  /// Forward-only migration ladder. `if (oldVersion < N)` (not a switch) so a
+  /// user jumping v1 -> v4 applies every intermediate step in order. sqflite
+  /// runs this inside a transaction, so a failing step rolls back atomically.
+  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    // if (oldVersion < 2) { ... }
   }
 
   // onConfigure runs on every open, before onCreate/onUpgrade, and outside
