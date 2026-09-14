@@ -30,6 +30,20 @@ class ActiveScreen extends StatelessWidget {
     // offers Resume/Discard). Only an unsaved *edit* needs confirming.
     final unsavedEdit = state is WorkoutInProgressState && state.isEditing;
     if (!unsavedEdit) {
+      if (state is WorkoutInProgressState && state.exercises.isNotEmpty) {
+        // The user's model is "leaving loses it"; say the opposite is true.
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Saved as draft — resume from Home',
+              style: GoogleFonts.dmSans(color: Colors.white),
+            ),
+            backgroundColor: const Color(0xFF6B4226),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+        );
+      }
       context.go('/');
       return;
     }
@@ -96,18 +110,34 @@ class _ActiveBody extends StatelessWidget {
           (prev is WorkoutInitialState || prev is WorkoutLoadingState),
       listener: (ctx, state) {
         final s = state as WorkoutInProgressState;
-        final from = s.isEditing
-            ? s.editing!.durationSeconds
-            : DateTime.now().difference(s.startedAt).inSeconds.clamp(0, 86400);
+        final from =
+            s.isEditing ? s.editing!.durationSeconds : s.elapsedSeconds;
         ctx.read<WorkoutTimerBloc>().add(WorkoutTimerStarted(from: from));
       },
-      child: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
-        children: const [
-          _WorkoutTimerSection(),
-          SizedBox(height: 20),
-          _ExerciseSection(),
-        ],
+      child: BlocListener<WorkoutTimerBloc, WorkoutTimerState>(
+        // Checkpoint the stopwatch into the draft every 10 s and whenever it
+        // pauses/stops, so a kill loses at most 10 s of active time.
+        listenWhen: (prev, cur) =>
+            cur is WorkoutTimerPausedState ||
+            cur is WorkoutTimerStoppedState ||
+            (cur is WorkoutTimerRunningState && cur.seconds % 10 == 0),
+        listener: (ctx, state) {
+          final seconds = switch (state) {
+            WorkoutTimerRunningState s => s.seconds,
+            WorkoutTimerPausedState s => s.seconds,
+            WorkoutTimerStoppedState s => s.seconds,
+            _ => 0,
+          };
+          ctx.read<WorkoutBloc>().add(WorkoutElapsedUpdated(seconds));
+        },
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+          children: const [
+            _WorkoutTimerSection(),
+            SizedBox(height: 20),
+            _ExerciseSection(),
+          ],
+        ),
       ),
     );
   }

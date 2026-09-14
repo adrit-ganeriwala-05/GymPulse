@@ -18,4 +18,8 @@ abstract class WorkoutRepository {
   Future<Workout?> getDraft();
 
   Future<void> deleteWorkout(String id);
+
+  /// Stopwatch reading for the open draft, so a resumed session continues
+  /// from accumulated *active* time rather than wall-clock age.
+  Future<void> recordDraftElapsed(String draftId, int elapsedSeconds);
 }

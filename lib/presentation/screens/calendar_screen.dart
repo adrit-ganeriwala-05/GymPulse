@@ -6,6 +6,7 @@ import 'package:table_calendar/table_calendar.dart';
 
 import '../../domain/entities/workout.dart';
 import '../../domain/usecases/get_workouts.dart';
+import '../../domain/workout_stats.dart';
 import '../../injection_container.dart';
 import '../format.dart';
 import '../units.dart';
@@ -67,12 +68,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
           }
           if (snapshot.hasError) return LoadErrorView(onRetry: _reload);
           final workouts = snapshot.data ?? const <Workout>[];
-          final workoutsByDay = <DateTime, List<Workout>>{};
-          for (final w in workouts) {
-            final key = DateTime(w.date.year, w.date.month, w.date.day);
-            workoutsByDay.putIfAbsent(key, () => []).add(w);
-          }
-          return _CalendarView(workoutsByDay: workoutsByDay);
+          return _CalendarView(workoutsByDay: groupByDay(workouts));
         },
       ),
     );

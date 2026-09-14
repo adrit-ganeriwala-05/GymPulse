@@ -3,6 +3,7 @@ import 'package:gympulse/data/datasources/workout_database.dart';
 import 'package:gympulse/data/datasources/workout_local_datasource.dart';
 import 'package:gympulse/data/models/exercise_model.dart';
 import 'package:gympulse/data/models/workout_model.dart';
+import 'package:gympulse/domain/workout_stats.dart';
 import 'package:path/path.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
@@ -85,6 +86,35 @@ void main() {
     await ds.upsertWorkout(sample(id: 'w1'), status: 'done');
     expect((await ds.getWorkouts()).map((w) => w.id), ['w1']);
     expect((await ds.getDraft())?.id, 'd1');
+  });
+
+  test('an open draft is invisible to every aggregate', () async {
+    final ds = WorkoutLocalDatasourceImpl();
+    final now = DateTime(2025, 6, 4, 12); // Wednesday
+    await ds.upsertWorkout(sample(id: 'done', date: DateTime(2025, 6, 3, 9)), status: 'done');
+    await ds.upsertWorkout(
+      WorkoutModel(id: 'draft', date: now, durationSeconds: 0, exerciseModels: const []),
+      status: 'draft',
+    );
+    final visible = await ds.getWorkouts();
+    expect(visible.map((w) => w.id), ['done']);
+    expect(countThisWeek(visible, now), 1);
+    expect(countThisMonth(visible, now), 1);
+    expect(longestRun(visible), 1);
+    expect(groupByDay(visible).containsKey(DateTime(2025, 6, 4)), isFalse,
+        reason: 'no phantom zero-exercise day on the calendar');
+    expect(mostRecentDay(visible).single.id, 'done');
+  });
+
+  test('updateDraftElapsed touches only the draft duration', () async {
+    final ds = WorkoutLocalDatasourceImpl();
+    await ds.upsertWorkout(sample(id: 'd'), status: 'draft');
+    await ds.updateDraftElapsed('d', 754);
+    expect((await ds.getDraft())!.durationSeconds, 754);
+    expect((await ds.getDraft())!.exercises, hasLength(2), reason: 'children untouched');
+    await ds.upsertWorkout(sample(id: 'd'), status: 'done');
+    await ds.updateDraftElapsed('d', 999); // no longer a draft: no-op
+    expect((await ds.getWorkouts()).single.durationSeconds, 5400);
   });
 
   test('finishing a draft flips it in place: no second row', () async {

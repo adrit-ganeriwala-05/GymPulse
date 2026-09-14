@@ -76,6 +76,25 @@ void main() {
       expect(await ds.getStreak(), 1);
     });
 
+    test('gap of exactly one day is still alive (morning before training)', () async {
+      await ds.updateStreak();
+      clock = day(1);
+      await ds.updateStreak();
+      clock = day(2); // not trained yet today
+      expect(await ds.getStreak(), 2);
+    });
+
+    test('getStreak never writes: a lapsed read leaves prefs untouched', () async {
+      await ds.updateStreak();
+      clock = day(1);
+      await ds.updateStreak();
+      final before = {for (final k in prefs.getKeys()) k: prefs.get(k)};
+      clock = day(5);
+      expect(await ds.getStreak(), 0);
+      expect({for (final k in prefs.getKeys()) k: prefs.get(k)}, before);
+      expect(prefs.getInt('streak_count'), 2, reason: 'updateStreak owns the write');
+    });
+
     test('lapsed streak reads as 0 until the next workout', () async {
       await ds.updateStreak();
       clock = day(1);

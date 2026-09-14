@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../../domain/entities/workout.dart';
 import '../../domain/streak_rules.dart';
+import '../../domain/workout_stats.dart';
 import '../../domain/usecases/discard_draft.dart';
 import '../../domain/usecases/get_draft.dart';
 import '../../domain/usecases/get_workouts.dart';
@@ -64,6 +65,13 @@ class _HomeScreenState extends State<HomeScreen> {
     if (mounted) setState(() => _draft = null);
   }
 
+  String _ago(DateTime then) {
+    final d = DateTime.now().difference(then);
+    if (d.inMinutes < 60) return '${d.inMinutes} min ago';
+    if (d.inHours < 24) return '${d.inHours} h ago';
+    return '${d.inDays} day${d.inDays == 1 ? '' : 's'} ago';
+  }
+
   // FIX: greeting changed from time-of-day to "Welcome, name 👋" per spec
   String _greeting() => 'Welcome, $_userName 👋';
 
@@ -92,48 +100,13 @@ class _HomeScreenState extends State<HomeScreen> {
           final workouts = snapshot.data ?? const <Workout>[];
           final now = DateTime.now();
 
-          final thisMonth = workouts
-              .where((w) => w.date.month == now.month && w.date.year == now.year)
-              .length;
-          // Calendar week (Mon-Sun), same definition the rest-day allowance uses.
-          final weekStart = startOfWeek(now);
-          final thisWeek = workouts
-              .map((w) => civilDate(w.date))
-              .toSet()
-              .where((d) => !d.isBefore(weekStart))
-              .length;
+          final thisMonth = countThisMonth(workouts, now);
+          final thisWeek = countThisWeek(workouts, now);
           final weekProgress =
               (thisWeek / kTrainingDaysPerWeek).clamp(0.0, 1.0);
           final trainedToday = workouts.any((w) => isSameCivilDay(w.date, now));
-
-          // Longest run of consecutive *workout* days. Deliberately not called
-          // a "streak": the streak card counts rest days as bridging, this
-          // tile cannot see rest days. Reconciliation is deferred (BUG-09).
-          int longestRun = 0;
-          int cur = 0;
-          DateTime? last;
-          final days = workouts.map((w) => civilDate(w.date)).toSet().toList()
-            ..sort();
-          for (final day in days) {
-            cur = (last != null && civilDaysBetween(last, day) == 1) ? cur + 1 : 1;
-            if (cur > longestRun) longestRun = cur;
-            last = day;
-          }
-
-          // Recent Activity should show every workout from the most recent
-          // workout day, not just the single newest one. workouts is sorted
-          // newest-first, so workouts.first is the latest day.
-          final List<Workout> recentDayWorkouts;
-          if (workouts.isEmpty) {
-            recentDayWorkouts = const [];
-          } else {
-            final latest = workouts.first.date;
-            final latestDay = DateTime(latest.year, latest.month, latest.day);
-            recentDayWorkouts = workouts.where((w) {
-              final d = DateTime(w.date.year, w.date.month, w.date.day);
-              return d == latestDay;
-            }).toList();
-          }
+          final longest = longestRun(workouts);
+          final recentDayWorkouts = mostRecentDay(workouts);
 
           return ListView(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
@@ -276,7 +249,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 children: [
                   _StatCard(label: 'This Month', value: '$thisMonth'),
                   const SizedBox(width: 8),
-                  _StatCard(label: 'Longest run', value: '$longestRun'),
+                  _StatCard(label: 'Longest run', value: '$longest'),
                   const SizedBox(width: 8),
                   _StatCard(label: 'This Week', value: '$thisWeek'),
                 ],
@@ -290,10 +263,12 @@ class _HomeScreenState extends State<HomeScreen> {
                     title: Text('Workout in progress',
                         style: Theme.of(context).textTheme.titleMedium),
                     subtitle: Text(
-                      '${_draft!.exercises.length} exercises · started ${formatDayMonth(_draft!.date, shortDay: true)}',
+                      '${_draft!.exercises.length} exercises · ${formatDuration(_draft!.durationSeconds)} active · started ${_ago(_draft!.date)}',
                       style: GoogleFonts.dmSans(fontSize: 13),
                     ),
-                    trailing: TextButton(
+                    // Stale drafts are kept, never auto-deleted: the age is
+                    // shown and Discard is a real button, so the user decides.
+                    trailing: OutlinedButton(
                       onPressed: _discardDraft,
                       child: const Text('Discard'),
                     ),
@@ -361,6 +336,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ...recentDayWorkouts.map(
                   (w) => WorkoutSummaryCard(
                     workout: w,
+                    onTap: () => context.push('/history'),
                     weightUnit:
                         sl<SharedPreferences>().getString('weight_unit') ??
                             'kg',

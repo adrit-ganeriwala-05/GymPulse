@@ -31,6 +31,11 @@ class WorkoutInProgressState extends WorkoutState {
 
   final List<Exercise> exercises;
 
+  /// Accumulated stopwatch seconds, persisted with the draft. Derived from
+  /// the timer, never from wall-clock age, so a draft resumed days later does
+  /// not read as a 72-hour workout.
+  final int elapsedSeconds;
+
   /// Non-null when editing an already-finished workout: mutations skip draft
   /// persistence and Finish updates in place without touching the streak.
   final Workout? editing;
@@ -39,21 +44,26 @@ class WorkoutInProgressState extends WorkoutState {
     required this.id,
     required this.startedAt,
     required this.exercises,
+    this.elapsedSeconds = 0,
     this.editing,
   });
 
   bool get isEditing => editing != null;
 
-  WorkoutInProgressState copyWith({List<Exercise>? exercises}) =>
+  WorkoutInProgressState copyWith({
+    List<Exercise>? exercises,
+    int? elapsedSeconds,
+  }) =>
       WorkoutInProgressState(
         id: id,
         startedAt: startedAt,
         exercises: exercises ?? this.exercises,
+        elapsedSeconds: elapsedSeconds ?? this.elapsedSeconds,
         editing: editing,
       );
 
   @override
-  List<Object?> get props => [id, startedAt, exercises, editing];
+  List<Object?> get props => [id, startedAt, exercises, elapsedSeconds, editing];
 }
 
 class WorkoutCompleteState extends WorkoutState {

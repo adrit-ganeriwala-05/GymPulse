@@ -10,10 +10,16 @@ class WorkoutSummaryCard extends StatefulWidget {
   // FIX: weightUnit param so history/home shows kg or lbs consistently
   final String weightUnit;
 
+  /// When set, a tap navigates instead of expanding. Threaded into the
+  /// card's own InkWell: wrapping a tappable widget in an outer
+  /// GestureDetector loses the gesture arena to the inner InkWell.
+  final VoidCallback? onTap;
+
   const WorkoutSummaryCard({
     super.key,
     required this.workout,
     this.weightUnit = 'kg',
+    this.onTap,
   });
 
   @override
@@ -36,7 +42,7 @@ class _WorkoutSummaryCardState extends State<WorkoutSummaryCard> {
       margin: const EdgeInsets.only(bottom: 12),
       child: InkWell(
         borderRadius: BorderRadius.circular(24),
-        onTap: () => setState(() => _expanded = !_expanded),
+        onTap: widget.onTap ?? () => setState(() => _expanded = !_expanded),
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Column(

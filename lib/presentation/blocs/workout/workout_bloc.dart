@@ -6,6 +6,7 @@ import '../../../domain/entities/exercise.dart';
 import '../../../domain/entities/workout.dart';
 import '../../../domain/usecases/discard_draft.dart';
 import '../../../domain/usecases/get_draft.dart';
+import '../../../domain/usecases/record_draft_elapsed.dart';
 import '../../../domain/usecases/save_draft.dart';
 import '../../../domain/usecases/save_workout.dart';
 import '../../../domain/usecases/update_streak.dart';
@@ -27,6 +28,7 @@ class WorkoutBloc extends Bloc<WorkoutEvent, WorkoutState> {
   final SaveDraft saveDraft;
   final GetDraft getDraft;
   final DiscardDraft discardDraft;
+  final RecordDraftElapsed recordDraftElapsed;
   final UpdateStreak updateStreak;
 
   /// Injectable clock; stamps [WorkoutInProgressState.startedAt].
@@ -38,6 +40,7 @@ class WorkoutBloc extends Bloc<WorkoutEvent, WorkoutState> {
     required this.saveDraft,
     required this.getDraft,
     required this.discardDraft,
+    required this.recordDraftElapsed,
     required this.updateStreak,
     DateTime Function()? clock,
   })  : now = clock ?? DateTime.now,
@@ -50,6 +53,7 @@ class WorkoutBloc extends Bloc<WorkoutEvent, WorkoutState> {
     on<SetLogged>(_onSetLogged, transformer: sequential());
     on<SetRemoved>(_onSetRemoved, transformer: sequential());
     on<ExerciseRemoved>(_onExerciseRemoved, transformer: sequential());
+    on<WorkoutElapsedUpdated>(_onElapsedUpdated, transformer: sequential());
     on<WorkoutDiscarded>(_onDiscarded);
     on<WorkoutFinished>(_onFinished);
   }
@@ -70,6 +74,7 @@ class WorkoutBloc extends Bloc<WorkoutEvent, WorkoutState> {
         id: draft.id,
         startedAt: draft.date,
         exercises: draft.exercises,
+        elapsedSeconds: draft.durationSeconds,
       ));
     } else {
       emit(WorkoutInProgressState(
@@ -153,12 +158,27 @@ class WorkoutBloc extends Bloc<WorkoutEvent, WorkoutState> {
     await _persist(next);
   }
 
+  Future<void> _onElapsedUpdated(
+    WorkoutElapsedUpdated event,
+    Emitter<WorkoutState> emit,
+  ) async {
+    if (state is! WorkoutInProgressState) return;
+    final current = state as WorkoutInProgressState;
+    if (current.isEditing) return;
+    emit(current.copyWith(elapsedSeconds: event.seconds));
+    try {
+      await recordDraftElapsed(current.id, event.seconds);
+    } catch (e, s) {
+      addError(e, s);
+    }
+  }
+
   /// Write-through. In-memory state stays authoritative: a failed write is
   /// logged, not surfaced, and the next mutation retries with a full snapshot.
   Future<void> _persist(WorkoutInProgressState s) async {
     if (s.isEditing) return;
     try {
-      await saveDraft(_toWorkout(s, durationSeconds: 0));
+      await saveDraft(_toWorkout(s, durationSeconds: s.elapsedSeconds));
     } catch (e, st) {
       addError(e, st);
     }

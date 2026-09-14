@@ -16,6 +16,9 @@ abstract class WorkoutLocalDatasource {
   Future<WorkoutModel?> getDraft();
 
   Future<void> deleteWorkout(String id);
+
+  /// Single-column UPDATE of the draft's stopwatch reading.
+  Future<void> updateDraftElapsed(String id, int elapsedSeconds);
 }
 
 class WorkoutLocalDatasourceImpl implements WorkoutLocalDatasource {
@@ -96,6 +99,17 @@ class WorkoutLocalDatasourceImpl implements WorkoutLocalDatasource {
     );
     final drafts = await _hydrate(db, rows);
     return drafts.isEmpty ? null : drafts.first;
+  }
+
+  @override
+  Future<void> updateDraftElapsed(String id, int elapsedSeconds) async {
+    final db = await _db;
+    await db.update(
+      'workouts',
+      {'duration_seconds': elapsedSeconds},
+      where: 'id = ? AND status = ?',
+      whereArgs: [id, statusDraft],
+    );
   }
 
   @override

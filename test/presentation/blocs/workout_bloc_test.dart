@@ -5,6 +5,7 @@ import 'package:gympulse/domain/repositories/streak_repository.dart';
 import 'package:gympulse/domain/repositories/workout_repository.dart';
 import 'package:gympulse/domain/usecases/discard_draft.dart';
 import 'package:gympulse/domain/usecases/get_draft.dart';
+import 'package:gympulse/domain/usecases/record_draft_elapsed.dart';
 import 'package:gympulse/domain/usecases/save_draft.dart';
 import 'package:gympulse/domain/usecases/save_workout.dart';
 import 'package:gympulse/domain/usecases/update_streak.dart';
@@ -18,6 +19,7 @@ class FakeWorkoutRepo implements WorkoutRepository {
   final done = <String, Workout>{};
   Workout? draft;
   int saveCalls = 0, updateCalls = 0, draftWrites = 0;
+  final elapsedWrites = <int>[];
   bool failSave = false;
 
   @override
@@ -46,6 +48,14 @@ class FakeWorkoutRepo implements WorkoutRepository {
     if (draft?.id == id) draft = null;
     done.remove(id);
   }
+  @override
+  Future<void> recordDraftElapsed(String draftId, int elapsedSeconds) async {
+    elapsedWrites.add(elapsedSeconds);
+    final d = draft;
+    if (d != null && d.id == draftId) {
+      draft = Workout(id: d.id, date: d.date, durationSeconds: elapsedSeconds, exercises: d.exercises);
+    }
+  }
 }
 
 class FakeStreakRepo implements StreakRepository {
@@ -72,6 +82,7 @@ void main() {
         saveDraft: SaveDraft(repo),
         getDraft: GetDraft(repo),
         discardDraft: DiscardDraft(repo),
+        recordDraftElapsed: RecordDraftElapsed(repo),
         updateStreak: UpdateStreak(streak),
         clock: () => t0,
       );
@@ -158,6 +169,28 @@ void main() {
     expect(streak.updates, 0);
   });
 
+  test('elapsed checkpoints persist and a resumed draft continues from them', () async {
+    bloc.add(const WorkoutStarted());
+    await settle();
+    bloc.add(const ExerciseAdded('Bench'));
+    bloc.add(const WorkoutElapsedUpdated(130));
+    await settle();
+    expect(repo.elapsedWrites, [130]);
+    expect(repo.draft!.durationSeconds, 130);
+    // Later mutation snapshots carry the elapsed value too.
+    bloc.add(const SetLogged(exerciseName: 'Bench', reps: 5, weight: 60));
+    await settle();
+    expect(repo.draft!.durationSeconds, 130);
+
+    // Days later: a new bloc resumes with 130 s, not wall-clock age.
+    final later = make();
+    later.add(const WorkoutStarted());
+    await settle();
+    final resumed = later.state as WorkoutInProgressState;
+    expect(resumed.elapsedSeconds, 130);
+    await later.close();
+  });
+
   test('discard deletes the draft and returns to initial', () async {
     bloc.add(const WorkoutStarted());
     await settle();
@@ -186,6 +219,34 @@ void main() {
       await settle();
       expect(repo.draftWrites, 0);
       expect(repo.draft, isNull);
+    });
+
+    test('editing twice leaves stored weights bit-identical (no display rounding)', () async {
+      // 61.2349 kg would display as "61.2"; storage must never see that.
+      final precise = Workout(
+        id: 'w-p',
+        date: DateTime(2025, 5, 1, 9),
+        durationSeconds: 100,
+        exercises: const [Exercise(name: 'Row', sets: [ExerciseSet(reps: 10, weight: 61.2349)])],
+      );
+      for (var i = 0; i < 2; i++) {
+        final b = make();
+        b.add(WorkoutEditStarted(i == 0 ? precise : repo.done['w-p']!));
+        await settle();
+        b.add(const WorkoutFinished(durationSeconds: 100));
+        await settle();
+        await b.close();
+      }
+      expect(repo.done['w-p']!.exercises.single.sets.single.weight, 61.2349);
+      expect(repo.updateCalls, 2);
+    });
+
+    test('elapsed updates are ignored in edit mode', () async {
+      bloc.add(WorkoutEditStarted(saved));
+      await settle();
+      bloc.add(const WorkoutElapsedUpdated(42));
+      await settle();
+      expect(repo.elapsedWrites, isEmpty);
     });
 
     test('finish in edit mode updates in place, keeps date, skips streak', () async {

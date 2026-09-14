@@ -31,4 +31,8 @@ class WorkoutRepositoryImpl implements WorkoutRepository {
 
   @override
   Future<void> deleteWorkout(String id) => datasource.deleteWorkout(id);
+
+  @override
+  Future<void> recordDraftElapsed(String draftId, int elapsedSeconds) =>
+      datasource.updateDraftElapsed(draftId, elapsedSeconds);
 }

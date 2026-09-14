@@ -16,6 +16,7 @@ import 'domain/usecases/get_streak.dart';
 import 'domain/usecases/get_weight_unit.dart';
 import 'domain/usecases/get_workouts.dart';
 import 'domain/usecases/save_weight_unit.dart';
+import 'domain/usecases/record_draft_elapsed.dart';
 import 'domain/usecases/save_draft.dart';
 import 'domain/usecases/save_workout.dart';
 import 'domain/usecases/update_workout.dart';
@@ -57,6 +58,7 @@ Future<void> init() async {
   sl.registerSingleton(SaveDraft(sl<WorkoutRepository>()));
   sl.registerSingleton(GetDraft(sl<WorkoutRepository>()));
   sl.registerSingleton(DiscardDraft(sl<WorkoutRepository>()));
+  sl.registerSingleton(RecordDraftElapsed(sl<WorkoutRepository>()));
   sl.registerSingleton(DeleteWorkout(sl<WorkoutRepository>()));
   sl.registerSingleton(GetStreak(sl<StreakRepository>()));
   sl.registerSingleton(UpdateStreak(sl<StreakRepository>()));
@@ -78,6 +80,7 @@ Future<void> init() async {
       saveDraft: sl<SaveDraft>(),
       getDraft: sl<GetDraft>(),
       discardDraft: sl<DiscardDraft>(),
+      recordDraftElapsed: sl<RecordDraftElapsed>(),
       updateStreak: sl<UpdateStreak>(),
     ),
   );

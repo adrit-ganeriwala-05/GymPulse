@@ -132,8 +132,10 @@ void main() {
     await settle(tester, 800);
 
     // ---- history: legacy + new, delete legacy via long-press ----
-    await tester.ensureVisible(find.text('View all'));
-    await tester.tap(find.text('View all'));
+    // Card tap navigates (InkWell owns the tap now); View all also exists.
+    expect(find.text('View all'), findsOneWidget);
+    await tester.ensureVisible(find.textContaining('1 exercises').first);
+    await tester.tap(find.textContaining('1 exercises').first);
     await settle(tester, 1000);
     expect(find.text('Workout History'), findsOneWidget);
     expect(find.textContaining('Jan 5'), findsOneWidget, reason: 'legacy row');

@@ -24,6 +24,17 @@ class WorkoutEditStarted extends WorkoutEvent {
   List<Object?> get props => [workout];
 }
 
+/// Stopwatch checkpoint from the timer; persisted so a resumed draft continues
+/// from accumulated active time.
+class WorkoutElapsedUpdated extends WorkoutEvent {
+  final int seconds;
+
+  const WorkoutElapsedUpdated(this.seconds);
+
+  @override
+  List<Object?> get props => [seconds];
+}
+
 /// Abandon the current draft (deletes the persisted row).
 class WorkoutDiscarded extends WorkoutEvent {
   const WorkoutDiscarded();
