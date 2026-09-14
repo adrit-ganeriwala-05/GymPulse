@@ -16,7 +16,7 @@ Written for: the repo owner, to defend each decision in a technical interview.
 
 **Week.** ISO Monday week, derived from the calendar rather than from "when the app was last opened", so it cannot drift (the old `>= 7` window re-anchored to *today*, so a day-8 open produced an 8-day week). `kRestDaysPerWeek` lives in `domain/` because both `data/` and `presentation/` may import domain — putting it in the datasource would force Home to import data, violating the dependency rule.
 
-**Testability.** `DateTime.now()` inside the datasource made every branch untestable. The clock is a constructor parameter (`clock: () => fixedDate`), `SharedPreferences.setMockInitialValues({})` is the in-memory store. 21 tests drive the exact dates: consecutive, gap 1, gap > 1, same-day double, rest-then-workout, week rollover at 6/7/8, and the DST pair `2025-03-09 → 03-10`.
+**Testability.** `DateTime.now()` inside the datasource made every branch untestable. The clock is a constructor parameter (`clock: () => fixedDate`), `SharedPreferences.setMockInitialValues({})` is the in-memory store. 29 tests drive the exact dates: consecutive, gap 1, gap > 1, same-day double, rest-then-workout, week rollover at 6/7/8, backdated credit (`updateStreak(on:)`), and the DST pair `2025-03-09 → 03-10`. The DST cases set `TZ=America/New_York` inside the process (`test/helpers/tz.dart`, libc `setenv` + `tzset`) and assert the 23 h gap is really there, so they fail against the old `inDays` arithmetic on any host — verified by patching it back in under `TZ=UTC`.
 
 **What breaks if the boundary is crossed.** If `home_screen.dart` imported `StreakLocalDatasourceImpl` for the constant, presentation would depend on a concrete data class; swapping the datasource (e.g. to SQLite-backed rest-day rows for BUG-09's reconciliation) would ripple into a widget.
 
@@ -42,7 +42,7 @@ Written for: the repo owner, to defend each decision in a technical interview.
 
 **Why the package.** A hand-rolled `_busy` latch is the same idea with more failure modes (must reset on every error path, invisible to the event stream). `bloc_concurrency` is first-party and ~100 lines.
 
-**WorkoutBloc.** Mutation handlers became read-emit-await-persist. Under `concurrent()`, two fast taps could persist an *older* snapshot after a newer one. `sequential()` on the four mutation events makes the draft on disk always the latest emitted state.
+**WorkoutBloc.** Mutation handlers became read-emit-await-persist. Under `concurrent()`, two fast taps could persist an *older* snapshot after a newer one. `sequential()` is applied to each mutation event — but note what it does and does not do. **It is a queue per event type**, not a global one: a `SetLogged` still runs while an `ExerciseAdded` is awaiting its write. The on-disk draft is nevertheless always the latest emitted state, for two other reasons: (1) every handler reads `state` and `emit`s *before* its first `await`, so the snapshot each handler persists is the newest state at the moment it started, in dispatch order; (2) sqflite executes statements on one connection in FIFO order, so writes land in that same order. `sequential()` only adds that two events *of the same type* cannot interleave. An earlier version of this section credited the transformer with the whole guarantee; that was wrong, and "fixing" it by swapping the transformer would change nothing — see `AUDIT_2.md` A2-08.
 
 ## 4. Feature A — persisted draft: state machine
 
@@ -72,9 +72,34 @@ Same states; `WorkoutInProgressState.editing: Workout?` is the mode flag. `Worko
 
 **Delete.** `DELETE FROM workouts WHERE id = ?`; children go via `ON DELETE CASCADE` — the first time it fires in this app. Confirmed on real SQLite under ffi and on the simulator.
 
-**Failure.** Delete fails → snackbar, list unchanged. Update fails → same recovery path as BUG-26. Abandoning an edit (back → confirm) leaves the original row untouched because edits never write.
+**Failure.** Delete fails → snackbar, list unchanged. Update fails → same recovery path as BUG-26 — and that path had a hole until round 4; see §6a. Abandoning an edit (back → confirm) leaves the original row untouched because edits never write.
 
 **Judgment call to revisit.** History still reads via `FutureBuilder` and calls `DeleteWorkout` directly. It matches the screen's existing read path and cost nothing extra; the next refactor is a `HistoryBloc` so History, Home and Calendar share one source of truth instead of three `GetWorkouts` calls.
+
+## 6a. A latent bug made reachable by three unrelated features (A2-01)
+
+**The bug.** `WorkoutTimerBloc._onStopped` and `_onPaused` computed the reading as `state is WorkoutTimerRunningState ? seconds : 0`. From a *paused* clock, Stop emitted `Stopped(0)`. That line had been there since the first commit and nobody had noticed, because the UI only shows Stop next to a running clock... and next to a paused one, which nobody tried.
+
+**What made it reachable.** Three additions from rounds 2–3, none of which touched the timer:
+1. **BUG-26 recovery** made a failed save return to an editable state — and `_saveAndFinish` dispatched `WorkoutTimerStopped` *before* the save. So a failed save left the clock stopped, and if it had been paused, stopped at **0**. The retry then read 0 and saved it. The very path built to make save failures safe corrupted the duration.
+2. **Edit mode** seeds the clock *paused* at the saved duration (round 3, so a short edit does not inflate a long workout). Every edit therefore started in the exact state that made Stop return 0.
+3. **The draft checkpoint listener** persisted whatever Stopped emitted, so Pause → Stop wrote `duration_seconds = 0` into the draft; a kill afterwards resumed at 00:00.
+
+Each addition was correct on its own terms and tested in isolation. The interaction was not, because no test ever paused a clock and then stopped it. A widget test that fails the save in edit mode and retries reproduced it in one shot.
+
+**The fix, and why Save & Finish no longer stops the clock.** The bloc reads from Running *or* Paused, and ignores Pause when not running (a double-tap before the button swaps landed in `_onPaused` while paused → `Paused(0)`, same class). More importantly, `_saveAndFinish` now only *reads* the duration: on success the route is disposed and `close()` cancels the subscription; on failure the clock keeps running, so a retry saves the then-current reading — which is the true elapsed time. Stopping before the outcome was known was the design error; it also raced a `Stopped(n)` checkpoint against the finish upsert.
+
+**Interview framing.** The failure mode is not "someone wrote a bad line"; it is that a precondition (“Stop is only ever sent to a running clock”) was never written down, so three later changes each violated it without knowing it existed. The remedy that scales is the one in `HANDOFF.md` §3: name the invariant, say where it is enforced, and test the interaction, not just the parts.
+
+## 6b. Which day does a finished draft credit? (A2-03)
+
+A session is dated from its *start* (BUG-06: a 23:50 workout finished at 00:20 belongs to the day it started). Round 2 applied that to the row but the streak side-effect still ran `updateStreak()` = *today*. Resume Monday's forgotten draft on Tuesday and the calendar said Monday while the streak said Tuesday — and a real Tuesday workout then read as "second workout today" and did not count.
+
+**Decision: credit the training day, not the save day.** The streak counts days on which the user *trained*; tapping Finish is bookkeeping, not training. Crediting the save day would make the streak depend on when the user remembered to press a button, and would disagree with every other view of the same data (History, Calendar, "Longest run" all group by `workout.date`). So `updateStreak(on: workout.date)`.
+
+**Mechanics for a backdated day.** Continuity is evaluated *at that day*: a day at or before the last credited workout is history (no-op); alive iff `civilDaysBetween(lastStreakDay, day) <= 1` where a negative gap is allowed — if `lastStreakDay` is after the day being credited, every day between the last workout and it is a rest day that was verified alive when marked, so the chain is continuous; and `last_streak_day` is `max(existing, day)`, never moved backwards. The datasource tests walk each case, including the one that is *not* reachable (rest today with the last workout two days ago is refused by `markRestDay` itself).
+
+**Overrule point.** If the product decision becomes "credit the finish day", the row's date must move with it — otherwise the disagreement returns. Two lines in `_toWorkout`/`_onFinished`.
 
 ## 6. Android vs iOS (what the emulator forced)
 
@@ -88,4 +113,4 @@ Same states; `WorkoutInProgressState.editing: Workout?` is the mode flag. `Worko
 
 ## 7. What I'd do next
 
-`HistoryBloc` (above). Rest days as rows so "Longest run" and the streak card can share one definition (BUG-09 reconciliation) and the calendar can draw real rest-day markers. Bundle fonts (BUG-21). `CHECK (reps > 0)` constraints — needs a table rebuild, so a v3 step.
+See `HANDOFF.md` §4–5 for the current list with reasoning. In short: a reactive read path (`HistoryBloc`) before any feature that needs live updates; rest days as rows so "Longest run" and the streak card share one definition (BUG-09) and the calendar can draw real rest-day markers; `CHECK` constraints and a one-draft partial index need a table rebuild, so a **v4** step (v3 is `timer_paused`). Fonts are bundled (BUG-21, round 2).

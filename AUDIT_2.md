@@ -195,8 +195,8 @@ Where they disagree the code wins; each is a stale claim, not a code bug.
 ## 6. Still open, unverified, or judgment calls
 
 - **A2-03 policy** — the streak is now credited to the workout's *start* day. If you would rather credit the finish day, the row's date should move with it; say so and it is a two-line change in `_toWorkout`/`_onFinished`.
-- **A2-07 DST tests** are meaningful only on a machine in a DST zone (this one is). A UTC CI would not catch a regression of BUG-03. Not fixable in-process.
+- **A2-07 DST tests** — closed in round 5: the zone is set inside the test (`test/helpers/tz.dart`) and all three were seen to fail against the old arithmetic under `TZ=UTC`.
 - **A2-08** is filed, not fixed: no constraint enforces one draft / the `status` domain, and a `getDraft()` read failure still starts a fresh session silently. Both need a v4 schema step or a design decision.
-- **Rest-sheet auto-close** still has no widget test (bloc transition is tested).
+- **Rest-sheet auto-close** — widget test added in round 5 (drives the bloc; the Start button is below the fold under the test font).
 - **Not device-verified this round:** the A2-01 retry path and the A2-02 button change were verified by widget tests with real blocs/datasource, not by injecting a disk failure on a device. The device suites cover the unchanged happy path.
 - **Spend** — I have no console access from this session; the number below is a token-volume estimate. Raw estimate for round 4 ≈ **$22** (two device builds, ~30 tool calls, ~3k lines read). Applying the ~40 % over-estimate you measured on previous rounds → **≈ $15**. Cumulative across all rounds by the same method: ≈ $134 raw / ≈ $95 calibrated. Please read the real figure from the console; the $85 stop was not approached.

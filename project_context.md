@@ -303,7 +303,7 @@ All theme data is defined inline as one large `ThemeData` literal in `main.dart`
 ## 7. Current Project State
 
 ### 7.1 Working and tested
-- Everything in §4, plus draft persistence/resume, edit and delete. 105 unit/widget tests (see `AUDIT_2.md` §5 for the breakdown) + 1 on-device integration test per platform; `flutter analyze` clean.
+- Everything in §4, plus draft persistence/resume, edit and delete. 106 unit/widget tests (see `HANDOFF.md` §1 for the breakdown) + 1 on-device integration test per platform; `flutter analyze` clean.
 - Save failures are recoverable (remove the offending set/exercise, retry). Load failures render `LoadErrorView`, never the empty state. Bloc errors are logged via `AppBlocObserver`.
 
 ### 7.2 Known gaps / next steps
