@@ -70,6 +70,7 @@ gympulse/
 │   ├── injection_container.dart           # get_it registrations (the composition root)
 │   ├── domain/
 │   │   ├── streak_rules.dart               # kRestDaysPerWeek, civilDate, civilDaysBetween, startOfWeek (pure Dart)
+│   │   ├── workout_stats.dart              # countThisWeek/Month, longestRun, groupByDay, mostRecentDay (pure Dart)
 │   │   ├── entities/
 │   │   │   ├── exercise.dart              # Exercise, ExerciseSet (weight is ALWAYS kg)
 │   │   │   └── workout.dart                # Workout
@@ -84,7 +85,7 @@ gympulse/
 │   │       ├── save_weight_unit.dart
 │   │       ├── save_workout.dart           # new or finalised draft (caller bumps streak)
 │   │       ├── update_workout.dart         # in-place edit (no streak side-effect)
-│   │       ├── save_draft.dart / get_draft.dart / discard_draft.dart
+│   │       ├── save_draft.dart / get_draft.dart / discard_draft.dart / record_draft_elapsed.dart
 │   │       ├── delete_workout.dart
 │   │       └── update_streak.dart
 │   ├── data/
@@ -291,7 +292,7 @@ Both `WorkoutTimerBloc` and `RestTimerBloc` use `Stream.periodic(Duration(second
 There are no API endpoints, no `http`/`dio` dependency, and no external integrations of any kind. All "integrations" are local platform packages (`sqflite`, `shared_preferences`).
 
 ### 6.6 Theming
-All theme data is defined inline as one large `ThemeData` literal in `main.dart` (not extracted into a separate theme file/class). Custom warm brown/cream Material 3 `ColorScheme` (hex-coded, not derived from a seed color), `Playfair Display` for display/headline/title text styles and `DM Sans` for body/label styles (both via `google_fonts`, fetched at runtime — first launch requires the font to download unless cached, per `google_fonts` package behavior). Component themes are set for `Card`, `ElevatedButton`, `AppBar`, and `InputDecoration`.
+All theme data is defined inline as one large `ThemeData` literal in `main.dart` (not extracted into a separate theme file/class). Custom warm brown/cream Material 3 `ColorScheme` (hex-coded, not derived from a seed color), `Playfair Display` for display/headline/title text styles and `DM Sans` for body/label styles (via `google_fonts`, **bundled** under `assets/fonts/` with runtime fetching disabled). Component themes are set for `Card`, `ElevatedButton`, `AppBar`, and `InputDecoration`.
 
 ---
 
@@ -302,7 +303,6 @@ All theme data is defined inline as one large `ThemeData` literal in `main.dart`
 - Save failures are recoverable (remove the offending set/exercise, retry). Load failures render `LoadErrorView`, never the empty state. Bloc errors are logged via `AppBlocObserver`.
 
 ### 7.2 Known gaps / next steps
-- **BUG-21 deferred**: `google_fonts` fetches over HTTP on cold first launch; fonts are not bundled.
 - **BUG-09 partially addressed**: Home's "Longest run" tile counts workout-day runs and cannot see rest days; the streak card can. Reconciliation needs rest days as queryable rows.
 - History, Home and Calendar each call `GetWorkouts` directly via `FutureBuilder`; History calls `DeleteWorkout` directly. A shared `HistoryBloc` is the next refactor.
 - `getWorkouts` is N+1 by design; revisit past ~2000 workouts.

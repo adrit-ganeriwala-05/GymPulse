@@ -30,7 +30,7 @@ BUG-13, 15, 16, 17 (gesture half), 20, 24, 25.
 Deleted per decision 5: four orphaned widgets, `flutter_animate`, the JSON codec, `HistoryRequested`/`WorkoutHistoryState` (not wired — `push()` already creates a fresh History state, so dropping `UniqueKey` was the whole fix). `web/`, `windows/`, `linux/` removed; README narrowed. `sqflite_common_ffi` (dev) runs the real datasource against real SQLite.
 Formatters consolidated into `presentation/format.dart`; **90-minute workouts now render `1:30:00`** (were `90:00`). Phantom "Rest day" legend removed.
 
-**Deferred — BUG-21 (google_fonts runtime fetch).** Needs five font binaries plus either the exact `google_fonts` asset naming or an 11-file refactor away from the package. Offline claim holds from the second launch on. Est. 20 min; cut to protect the feature budget.
+**BUG-21 — fixed in round 2.** Playfair Display and DM Sans variable TTFs (OFL, from google/fonts) bundled under `assets/fonts/` with the `Family-Variant.ttf` names `google_fonts` resolves from the asset manifest; `allowRuntimeFetching = false` so a missing face fails loudly instead of silently after a network attempt. +1.6 MB. No Dart call sites changed.
 
 ## Stage 6 — features (`4ceac8c`, `9ff7dfa`)
 Picked A (persisted draft) and B (edit/delete) — reasoning in `FEATURE_PROPOSALS.md`.
@@ -65,5 +65,16 @@ Tests: 5 datasource cases incl. **v1 → v2 migration on a hand-built v1 file**,
 5. `_reload() => setState(() => _x = …)` returned the Future from the callback; framework assert. Block body in all three screens.
 6. `main()` replaced `FlutterError.onError`; now chains.
 
+## Round 2 (review follow-ups)
+1. **Draft leaking into reads — not a bug.** Audited every read path: there is exactly one, `getWorkouts()` with `status = 'done'`; Home tiles, Longest run, recent activity, Calendar grouping and History all derive from it. The aggregations lived in widget `build`s, so they were untestable; extracted to `domain/workout_stats.dart` (`countThisWeek`, `countThisMonth`, `longestRun`, `groupByDay`, `mostRecentDay`) and asserted end-to-end from the ffi datasource with a zero-exercise draft seeded today: invisible to all five.
+2. **Stopwatch — fixed.** Elapsed is now persisted, not derived: `WorkoutInProgressState.elapsedSeconds`, `WorkoutElapsedUpdated` checkpointed from the timer every 10 s and on pause/stop (single-column `UPDATE` via `RecordDraftElapsed`, not a full replace), carried on every mutation snapshot, and seeded back into the timer on resume. A kill loses ≤10 s of *active* time; a three-day-old draft resumes at its real elapsed. Paused-at-death resumes running (the pause flag is not persisted) — noted, small.
+   **Stale-draft policy: keep, show age, prominent Discard; no auto-discard.** A gym app that deletes logged sets on its own violates the point of Feature A; the cost of a stale resume is one workout dated from its real start, which is arguably correct, and the banner shows "started N days ago · M active" beside an `OutlinedButton` Discard so the choice is informed. A cap would trade a rare mis-dated workout for silent data loss.
+3. **getStreak — both confirmed, now asserted.** Gap of exactly 1 reads alive (`_isAlive` is `<= 1`; test: train Mon+Tue, read Wed morning → 2). `getStreak()` never writes (test snapshots every pref before a lapsed read and asserts equality; `streak_count` still holds the old value — `updateStreak` owns the write).
+4. **Home card tap — fixed properly.** `WorkoutSummaryCard` takes an optional `onTap` threaded into its own `InkWell`; Home passes the navigation. Outer `GestureDetector` removed. "View all" kept. Integration test now taps the card.
+5. **"Saved as draft" snackbar** on leaving `/active` with logged exercises. Taken.
+6. **Edit-mode rounding — not a bug.** Nothing prefills the weight field; edit mode carries stored `ExerciseSet` doubles through untouched, and only new sets pass through `displayToKg` once. Test: edit `61.2349 kg` twice → stored value bit-identical.
+7. **BUG-21 — fixed** (above).
+New tests: +2 streak, +2 datasource, +3 bloc → **46 unit/bloc**. One integration run.
+
 ## Spend
-Approximate, from token volume: Stage 1 $7 · Stage 2 $9 · Stage 3 $16 · Stage 4 $24 · Stage 5 $33 · Stage 6 $52 · Stage 7 (8 simulator runs) + docs ≈ $70. No checkpoint tripped.
+Approximate, from token volume: Stage 1 $7 · Stage 2 $9 · Stage 3 $16 · Stage 4 $24 · Stage 5 $33 · Stage 6 $52 · Stage 7 (8 simulator runs) + docs ≈ $70. Round 2 (one simulator run) ≈ $12 → **≈ $82 total**. No checkpoint tripped.
