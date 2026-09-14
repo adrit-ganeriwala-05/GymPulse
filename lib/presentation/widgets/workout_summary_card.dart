@@ -16,11 +16,16 @@ class WorkoutSummaryCard extends StatefulWidget {
   /// GestureDetector loses the gesture arena to the inner InkWell.
   final VoidCallback? onTap;
 
+  /// When set, an exercise name in the expanded card is tappable (History →
+  /// exercise progress, Feature D).
+  final void Function(String name)? onExerciseTap;
+
   const WorkoutSummaryCard({
     super.key,
     required this.workout,
     this.weightUnit = 'kg',
     this.onTap,
+    this.onExerciseTap,
   });
 
   @override
@@ -86,12 +91,26 @@ class _WorkoutSummaryCardState extends State<WorkoutSummaryCard> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            exercise.name,
-                            style: GoogleFonts.dmSans(
-                              fontWeight: FontWeight.w600,
-                              color: cs.primary,
-                              fontSize: 15,
+                          InkWell(
+                            onTap: widget.onExerciseTap == null
+                                ? null
+                                : () => widget.onExerciseTap!(exercise.name),
+                            borderRadius: BorderRadius.circular(6),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  exercise.name,
+                                  style: GoogleFonts.dmSans(
+                                    fontWeight: FontWeight.w600,
+                                    color: cs.primary,
+                                    fontSize: 15,
+                                  ),
+                                ),
+                                if (widget.onExerciseTap != null)
+                                  Icon(Icons.chevron_right,
+                                      size: 18, color: cs.primary),
+                              ],
                             ),
                           ),
                           const SizedBox(height: 4),

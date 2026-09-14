@@ -7,12 +7,17 @@ import 'package:go_router/go_router.dart';
 import 'package:gympulse/domain/entities/exercise.dart';
 import 'package:gympulse/domain/entities/workout.dart';
 import 'package:gympulse/domain/entities/workout_draft.dart';
+import 'package:gympulse/domain/exercise_name.dart';
+import 'package:gympulse/domain/read_models/exercise_progress.dart';
+import 'package:gympulse/domain/repositories/progress_repository.dart';
 import 'package:gympulse/domain/repositories/settings_repository.dart';
 import 'package:gympulse/domain/repositories/streak_repository.dart';
 import 'package:gympulse/domain/repositories/workout_repository.dart';
 import 'package:gympulse/domain/usecases/delete_workout.dart';
+import 'package:gympulse/domain/usecases/discard_all_drafts.dart';
 import 'package:gympulse/domain/usecases/discard_draft.dart';
 import 'package:gympulse/domain/usecases/get_draft.dart';
+import 'package:gympulse/domain/usecases/get_exercise_progress.dart';
 import 'package:gympulse/domain/usecases/get_streak.dart';
 import 'package:gympulse/domain/usecases/get_weight_unit.dart';
 import 'package:gympulse/domain/usecases/get_workouts.dart';
@@ -39,6 +44,8 @@ class FakeWorkoutRepo implements WorkoutRepository {
   bool draftPaused = false;
   bool failReads = false;
   bool failWrites = false;
+  bool failDraftRead = false;
+  int discardAllCalls = 0;
   final deleted = <String>[];
 
   /// When set, reads block until completed — lets tests observe loading UI.
@@ -66,7 +73,15 @@ class FakeWorkoutRepo implements WorkoutRepository {
   @override
   Future<WorkoutDraft?> getDraft() async {
     if (readGate != null) await readGate!.future;
+    if (failDraftRead) throw StateError('db unavailable');
     return draft == null ? null : WorkoutDraft(workout: draft!, timerPaused: draftPaused);
+  }
+  @override
+  Future<void> discardAllDrafts() async {
+    if (failWrites) throw StateError('disk full');
+    discardAllCalls++;
+    if (draft != null) deleted.add(draft!.id);
+    draft = null;
   }
   @override
   Future<void> deleteWorkout(String id) async {
@@ -98,6 +113,33 @@ class FakeStreakRepo implements StreakRepository {
   Future<void> markRestDay() async => rest--;
 }
 
+/// Derives progress from FakeWorkoutRepo.done so widget tests see the same
+/// data the workout screens do; drafts are ignored like the real query.
+class FakeProgressRepo implements ProgressRepository {
+  final FakeWorkoutRepo workouts;
+  bool failReads = false;
+  FakeProgressRepo(this.workouts);
+  @override
+  Future<ExerciseProgress> getExerciseProgress(String name) async {
+    if (failReads) throw StateError('db unavailable');
+    final key = normalizeExerciseName(name);
+    final rows = <WorkoutTopSet>[];
+    String? latest;
+    DateTime? latestDate;
+    for (final w in workouts.done.values) {
+      for (final e in w.exercises) {
+        if (normalizeExerciseName(e.name) != key || e.sets.isEmpty) continue;
+        if (latestDate == null || w.date.isAfter(latestDate)) { latest = e.name; latestDate = w.date; }
+        final best = e.sets.reduce((a, b) =>
+            (b.weight > a.weight || (b.weight == a.weight && b.reps > a.reps)) ? b : a);
+        rows.add((date: w.date, reps: best.reps, weightKg: best.weight));
+      }
+    }
+    return ExerciseProgress.fromWorkoutTopSets(
+        key: key, displayName: latest ?? name.trim(), perWorkout: rows);
+  }
+}
+
 class FakeSettingsRepo implements SettingsRepository {
   String unit = 'kg';
   @override
@@ -114,14 +156,17 @@ Workout sampleWorkout({String id = 'w1', DateTime? date, int duration = 1500}) =
     );
 
 /// Registers fakes in get_it for screens that read via `sl<...>()`.
-Future<void> registerFakes(FakeWorkoutRepo repo, {Map<String, Object> prefs = const {}}) async {
+Future<void> registerFakes(FakeWorkoutRepo repo,
+    {Map<String, Object> prefs = const {}, FakeProgressRepo? progress}) async {
   final sl = GetIt.instance;
   await sl.reset();
   SharedPreferences.setMockInitialValues(prefs);
   sl.registerSingleton<SharedPreferences>(await SharedPreferences.getInstance());
+  sl.registerSingleton(GetExerciseProgress(progress ?? FakeProgressRepo(repo)));
   sl.registerSingleton(GetWorkouts(repo));
   sl.registerSingleton(GetDraft(repo));
   sl.registerSingleton(DiscardDraft(repo));
+  sl.registerSingleton(DiscardAllDrafts(repo));
   sl.registerSingleton(DeleteWorkout(repo));
 }
 

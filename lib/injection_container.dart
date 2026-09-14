@@ -1,17 +1,22 @@
 import 'package:get_it/get_it.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'data/datasources/progress_local_datasource.dart';
 import 'data/datasources/streak_local_datasource.dart';
 import 'data/datasources/workout_local_datasource.dart';
+import 'data/repositories/progress_repository_impl.dart';
 import 'data/repositories/settings_repository_impl.dart';
 import 'data/repositories/streak_repository_impl.dart';
 import 'data/repositories/workout_repository_impl.dart';
+import 'domain/repositories/progress_repository.dart';
 import 'domain/repositories/settings_repository.dart';
 import 'domain/repositories/streak_repository.dart';
 import 'domain/repositories/workout_repository.dart';
 import 'domain/usecases/delete_workout.dart';
+import 'domain/usecases/discard_all_drafts.dart';
 import 'domain/usecases/discard_draft.dart';
 import 'domain/usecases/get_draft.dart';
+import 'domain/usecases/get_exercise_progress.dart';
 import 'domain/usecases/get_streak.dart';
 import 'domain/usecases/get_weight_unit.dart';
 import 'domain/usecases/get_workouts.dart';
@@ -40,6 +45,9 @@ Future<void> init() async {
   sl.registerSingleton<StreakLocalDatasource>(
     StreakLocalDatasourceImpl(sl<SharedPreferences>()),
   );
+  sl.registerLazySingleton<ProgressLocalDatasource>(
+    () => ProgressLocalDatasourceImpl(),
+  );
 
   sl.registerSingleton<WorkoutRepository>(
     WorkoutRepositoryImpl(sl<WorkoutLocalDatasource>()),
@@ -50,6 +58,9 @@ Future<void> init() async {
   sl.registerSingleton<SettingsRepository>(
     SettingsRepositoryImpl(sl<SharedPreferences>()),
   );
+  sl.registerSingleton<ProgressRepository>(
+    ProgressRepositoryImpl(sl<ProgressLocalDatasource>()),
+  );
 
   sl.registerSingleton(GetWorkouts(sl<WorkoutRepository>()));
   sl.registerSingleton(SaveWorkout(sl<WorkoutRepository>()));
@@ -58,12 +69,14 @@ Future<void> init() async {
   sl.registerSingleton(SaveDraft(sl<WorkoutRepository>()));
   sl.registerSingleton(GetDraft(sl<WorkoutRepository>()));
   sl.registerSingleton(DiscardDraft(sl<WorkoutRepository>()));
+  sl.registerSingleton(DiscardAllDrafts(sl<WorkoutRepository>()));
   sl.registerSingleton(RecordDraftElapsed(sl<WorkoutRepository>()));
   sl.registerSingleton(DeleteWorkout(sl<WorkoutRepository>()));
   sl.registerSingleton(GetStreak(sl<StreakRepository>()));
   sl.registerSingleton(UpdateStreak(sl<StreakRepository>()));
   sl.registerSingleton(GetWeightUnit(sl<SettingsRepository>()));
   sl.registerSingleton(SaveWeightUnit(sl<SettingsRepository>()));
+  sl.registerSingleton(GetExerciseProgress(sl<ProgressRepository>()));
 
   sl.registerFactory<WorkoutTimerBloc>(() => WorkoutTimerBloc());
   sl.registerFactory<RestTimerBloc>(() => RestTimerBloc());

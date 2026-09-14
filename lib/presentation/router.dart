@@ -16,6 +16,7 @@ import 'blocs/workout/workout_event.dart';
 import 'blocs/workout_timer/workout_timer_bloc.dart';
 import 'screens/active_screen.dart';
 import 'screens/calendar_screen.dart';
+import 'screens/exercise_progress_screen.dart';
 import 'screens/history_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/onboarding_screen.dart';
@@ -94,6 +95,12 @@ GoRouter createRouter(bool onboardingComplete) {
       GoRoute(
         path: '/calendar',
         builder: (context, state) => const CalendarScreen(),
+      ),
+      GoRoute(
+        // `extra` is the exercise name as typed; the screen normalises it.
+        path: '/exercise',
+        builder: (context, state) =>
+            ExerciseProgressScreen(name: state.extra as String? ?? ''),
       ),
     ],
     // FIX: themed error page with home navigation

@@ -1,14 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gympulse/main.dart' as app;
+import 'package:gympulse/presentation/widgets/workout_summary_card.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite/sqflite.dart';
 
 /// Drives the real app on a device/simulator through the core flow, starting
-/// from a pre-seeded **v1** database so the v1→v2 migration is exercised on
-/// the real sqflite plugin, not only under ffi.
+/// from a pre-seeded **v1** database so the whole v1→v4 ladder (including the
+/// v4 table rebuild) is exercised on the real sqflite plugin, not only under
+/// ffi.
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
@@ -146,6 +148,19 @@ void main() {
     await tester.tap(find.text('Delete'));
     await settle(tester, 1000);
     expect(find.textContaining('Jan 5'), findsNothing, reason: 'cascade delete');
+
+    // ---- exercise progress (Feature D): expand the card, tap the name ----
+    await tester.tap(find.byType(WorkoutSummaryCard).first);
+    await settle(tester);
+    await tester.ensureVisible(find.text('Bench'));
+    await tester.tap(find.text('Bench'));
+    await settle(tester, 1000);
+    expect(find.text('Personal record'), findsOneWidget);
+    expect(find.text('60 kg × 8'), findsWidgets, reason: 'aggregate read on the real plugin, kg as stored');
+    expect(find.text('PR'), findsOneWidget);
+    await tester.pageBack();
+    await settle(tester, 800);
+    expect(find.text('Workout History'), findsOneWidget);
 
     // ---- edit: opens active screen in edit mode; back asks to confirm ----
     await tester.longPress(find.textContaining('1 exercises').first);

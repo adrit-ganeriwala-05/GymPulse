@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gympulse/presentation/router.dart';
+import 'package:gympulse/presentation/widgets/workout_summary_card.dart';
 
 import '../helpers/fakes.dart';
 
@@ -93,6 +94,23 @@ void main() {
     expect(find.textContaining('1 exercises'), findsOneWidget,
         reason: 'Home reloaded its workouts on didPopNext');
     expect(streak.updates, 1);
+  });
+
+  testWidgets('History → expand a card → tap the exercise name → its progress screen', (tester) async {
+    repo.done['w1'] = sampleWorkout(id: 'w1', date: DateTime(2025, 6, 2, 18)); // Bench 10 × 60
+    await pumpApp(tester, onboarded: true);
+    await tester.tap(find.text('View all'));
+    await tester.pumpAndSettle();
+    expect(find.text('Workout History'), findsOneWidget);
+    await tester.tap(find.byType(WorkoutSummaryCard));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Bench'));
+    await tester.pumpAndSettle();
+    expect(find.text('Personal record'), findsOneWidget);
+    expect(find.text('60 kg × 10'), findsNWidgets(2));
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    expect(find.text('Workout History'), findsOneWidget);
   });
 }
 

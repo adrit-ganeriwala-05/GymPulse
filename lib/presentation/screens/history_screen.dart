@@ -166,6 +166,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                 workout: workouts[index],
                 // FIX: pass saved unit so history shows kg or lbs correctly
                 weightUnit: sl<SharedPreferences>().getString('weight_unit') ?? 'kg',
+                onExerciseTap: (name) => context.push('/exercise', extra: name),
               ),
             ),
           );

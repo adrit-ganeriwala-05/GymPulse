@@ -26,6 +26,7 @@ class FakeWorkoutRepo implements WorkoutRepository {
   int saveCalls = 0, updateCalls = 0, draftWrites = 0;
   final elapsedWrites = <int>[];
   bool failSave = false;
+  bool failDraftRead = false;
 
   @override
   Future<List<Workout>> getWorkouts() async => done.values.toList();
@@ -48,8 +49,12 @@ class FakeWorkoutRepo implements WorkoutRepository {
     draftPaused = d.timerPaused;
   }
   @override
-  Future<WorkoutDraft?> getDraft() async =>
-      draft == null ? null : WorkoutDraft(workout: draft!, timerPaused: draftPaused);
+  Future<WorkoutDraft?> getDraft() async {
+    if (failDraftRead) throw StateError('db unavailable');
+    return draft == null ? null : WorkoutDraft(workout: draft!, timerPaused: draftPaused);
+  }
+  @override
+  Future<void> discardAllDrafts() async => draft = null;
   @override
   Future<void> deleteWorkout(String id) async {
     if (draft?.id == id) draft = null;
@@ -130,6 +135,16 @@ void main() {
     expect(repo.draftWrites, 4);
     expect(repo.draft!.id, inProgress().id);
     expect(repo.draft!.exercises, isEmpty);
+  });
+
+  test('adding "bench " when "Bench" exists is refused: one key per session (Feature D rule)', () async {
+    bloc.add(const WorkoutStarted());
+    await settle();
+    bloc.add(const ExerciseAdded('Bench'));
+    bloc.add(const ExerciseAdded('bench '));
+    bloc.add(const ExerciseAdded('Bench Press'));
+    await settle();
+    expect(inProgress().exercises.map((e) => e.name), ['Bench', 'Bench Press']);
   });
 
   test('start with a draft → resumes it with the same id and start time', () async {
@@ -257,6 +272,32 @@ void main() {
         reason: 'streak and calendar must agree on which day was trained');
     expect(await ds.getStreak(), 1, reason: 'still alive today (gap 1)');
     await b.close();
+  });
+
+  test('draft read failure → Unavailable, never a fresh session; retry resumes the draft (A2-08)', () async {
+    repo.draft = Workout(
+      id: 'on-disk',
+      date: DateTime(2025, 6, 2, 17),
+      durationSeconds: 90,
+      exercises: const [Exercise(name: 'Squat', sets: [ExerciseSet(reps: 5, weight: 80)])],
+    );
+    repo.failDraftRead = true;
+    bloc.add(const WorkoutStarted());
+    await settle();
+    expect(bloc.state, isA<WorkoutUnavailableState>());
+    // Mutations are refused: nothing can create a second draft.
+    bloc.add(const ExerciseAdded('Bench'));
+    bloc.add(const WorkoutElapsedUpdated(10));
+    await settle();
+    expect(bloc.state, isA<WorkoutUnavailableState>());
+    expect(repo.draftWrites, 0);
+    expect(repo.elapsedWrites, isEmpty);
+    // Retry once the read works again resumes the on-disk draft, same id.
+    repo.failDraftRead = false;
+    bloc.add(const WorkoutStarted());
+    await settle();
+    expect(inProgress().id, 'on-disk');
+    expect(inProgress().exercises.single.name, 'Squat');
   });
 
   test('discard deletes the draft and returns to initial', () async {
