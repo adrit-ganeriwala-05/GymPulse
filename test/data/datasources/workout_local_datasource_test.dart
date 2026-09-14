@@ -174,11 +174,40 @@ void main() {
     expect(await WorkoutLocalDatasourceImpl().getDraft(), isNull);
   });
 
-  test('concurrent first access opens the database once (BUG-12)', () async {
-    final results = await Future.wait([
-      WorkoutDatabase.instance.database,
-      WorkoutDatabase.instance.database,
-    ]);
-    expect(identical(results[0], results[1]), isTrue);
+  test('v2 database (status column, open draft) migrates to v3 without re-running the v2 step', () async {
+    // The v1→v3 test above cannot catch a ladder that re-applies step 2 on a
+    // v2 file ("duplicate column name: status"). Build a real v2 file.
+    final path = await dbPath();
+    final v2 = await openDatabase(path, version: 2, onCreate: (db, _) async {
+      await db.execute("CREATE TABLE workouts (id TEXT PRIMARY KEY, date TEXT NOT NULL, duration_seconds INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'done')");
+      await db.execute('CREATE TABLE exercises (id TEXT PRIMARY KEY, workout_id TEXT NOT NULL, name TEXT NOT NULL, position INTEGER NOT NULL DEFAULT 0, FOREIGN KEY (workout_id) REFERENCES workouts(id) ON DELETE CASCADE)');
+      await db.execute('CREATE TABLE sets (id TEXT PRIMARY KEY, exercise_id TEXT NOT NULL, reps INTEGER NOT NULL, weight REAL NOT NULL, position INTEGER NOT NULL DEFAULT 0, FOREIGN KEY (exercise_id) REFERENCES exercises(id) ON DELETE CASCADE)');
+    });
+    await v2.insert('workouts', {'id': 'done1', 'date': '2025-01-05T10:00:00.000', 'duration_seconds': 1200, 'status': 'done'});
+    await v2.insert('workouts', {'id': 'draft1', 'date': '2025-01-06T10:00:00.000', 'duration_seconds': 300, 'status': 'draft'});
+    await v2.insert('exercises', {'id': 'e1', 'workout_id': 'draft1', 'name': 'Row', 'position': 0});
+    await v2.close();
+
+    final db = await WorkoutDatabase.instance.database;
+    expect(await db.getVersion(), 3);
+    final ds = WorkoutLocalDatasourceImpl();
+    expect((await ds.getWorkouts()).map((w) => w.id), ['done1']);
+    final d = (await ds.getDraft())!;
+    expect(d.workout.id, 'draft1');
+    expect(d.timerPaused, isFalse, reason: 'v3 default backfills 0');
+    expect(d.workout.exercises.single.name, 'Row');
+  });
+
+  test('a failed open is not cached: the next caller retries (BUG-12 guard)', () async {
+    // sqflite already single-instances and serialises openDatabase per path,
+    // so "opens once" is not observable; the reset-on-failure branch is.
+    final good = await getDatabasesPath();
+    // Root-owned parent: neither the directory nor the file can be created.
+    await databaseFactory.setDatabasesPath('/gympulse-audit2-no-such-dir/db');
+    addTearDown(() => databaseFactory.setDatabasesPath(good));
+    await expectLater(WorkoutDatabase.instance.database, throwsA(anything));
+    await databaseFactory.setDatabasesPath(good);
+    final db = await WorkoutDatabase.instance.database;
+    expect(await db.getVersion(), WorkoutDatabase.schemaVersion);
   });
 }

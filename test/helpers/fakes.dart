@@ -37,6 +37,7 @@ class FakeWorkoutRepo implements WorkoutRepository {
   Workout? draft;
   bool draftPaused = false;
   bool failReads = false;
+  bool failWrites = false;
   final deleted = <String>[];
 
   /// When set, reads block until completed — lets tests observe loading UI.
@@ -50,9 +51,15 @@ class FakeWorkoutRepo implements WorkoutRepository {
     return l;
   }
   @override
-  Future<void> saveWorkout(Workout w) async { draft = null; done[w.id] = w; }
+  Future<void> saveWorkout(Workout w) async {
+    if (failWrites) throw StateError('disk full');
+    draft = null; done[w.id] = w;
+  }
   @override
-  Future<void> updateWorkout(Workout w) async => done[w.id] = w;
+  Future<void> updateWorkout(Workout w) async {
+    if (failWrites) throw StateError('disk full');
+    done[w.id] = w;
+  }
   @override
   Future<void> saveDraft(WorkoutDraft d) async { draft = d.workout; draftPaused = d.timerPaused; }
   @override
@@ -105,6 +112,23 @@ Future<void> registerFakes(FakeWorkoutRepo repo, {Map<String, Object> prefs = co
   sl.registerSingleton(GetDraft(repo));
   sl.registerSingleton(DiscardDraft(repo));
   sl.registerSingleton(DeleteWorkout(repo));
+}
+
+/// Bloc factories mirroring injection_container.dart, so `createRouter` can
+/// build real routes on top of the fakes.
+void registerBlocFactories(FakeWorkoutRepo repo, FakeStreakRepo streak) {
+  final settings = FakeSettingsRepo();
+  sl.registerFactory<WorkoutTimerBloc>(() => WorkoutTimerBloc());
+  sl.registerFactory<RestTimerBloc>(() => RestTimerBloc());
+  sl.registerFactory<StreakBloc>(() => StreakBloc(
+        getStreak: GetStreak(streak),
+        updateStreak: UpdateStreak(streak),
+      ));
+  sl.registerFactory<WorkoutBloc>(() => makeWorkoutBloc(repo, streak));
+  sl.registerFactory<SettingsBloc>(() => SettingsBloc(
+        getWeightUnit: GetWeightUnit(settings),
+        saveWeightUnit: SaveWeightUnit(settings),
+      ));
 }
 
 WorkoutBloc makeWorkoutBloc(FakeWorkoutRepo repo, FakeStreakRepo streak) => WorkoutBloc(
