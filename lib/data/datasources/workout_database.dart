@@ -20,7 +20,7 @@ class WorkoutDatabase {
 
   /// Bump this when the schema changes and add a step to [_onUpgrade].
   /// [_createDB] must produce the same shape a fully-migrated DB has.
-  static const schemaVersion = 1;
+  static const schemaVersion = 2;
 
   Future<Database> _initDB(String filePath) async {
     final dbPath = await getDatabasesPath();
@@ -41,7 +41,13 @@ class WorkoutDatabase {
   /// user jumping v1 -> v4 applies every intermediate step in order. sqflite
   /// runs this inside a transaction, so a failing step rolls back atomically.
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
-    // if (oldVersion < 2) { ... }
+    if (oldVersion < 2) {
+      // v2: in-progress drafts live in the same table. Every pre-existing
+      // row is a finished workout, so the default backfills correctly.
+      await db.execute(
+        "ALTER TABLE workouts ADD COLUMN status TEXT NOT NULL DEFAULT 'done'",
+      );
+    }
   }
 
   // onConfigure runs on every open, before onCreate/onUpgrade, and outside
@@ -56,7 +62,8 @@ class WorkoutDatabase {
       CREATE TABLE workouts (
         id TEXT PRIMARY KEY,
         date TEXT NOT NULL,
-        duration_seconds INTEGER NOT NULL DEFAULT 0
+        duration_seconds INTEGER NOT NULL DEFAULT 0,
+        status TEXT NOT NULL DEFAULT 'done'   -- 'done' | 'draft' (v2)
       )
     ''');
 

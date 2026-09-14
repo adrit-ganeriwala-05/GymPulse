@@ -14,21 +14,46 @@ class WorkoutInitialState extends WorkoutState {
   const WorkoutInitialState();
 }
 
+/// Draft lookup in flight. A real state so the Active screen never renders
+/// an empty session before it knows whether one is being resumed.
+class WorkoutLoadingState extends WorkoutState {
+  const WorkoutLoadingState();
+}
+
 class WorkoutInProgressState extends WorkoutState {
-  final List<Exercise> exercises;
+  /// Stable for the whole session; the draft row and the finished row share it.
+  final String id;
 
   /// Captured when the session begins. The saved workout is dated from this,
   /// not from the finish tap, so a session crossing midnight files under the
   /// day it started (BUG-06).
   final DateTime startedAt;
 
+  final List<Exercise> exercises;
+
+  /// Non-null when editing an already-finished workout: mutations skip draft
+  /// persistence and Finish updates in place without touching the streak.
+  final Workout? editing;
+
   const WorkoutInProgressState({
-    required this.exercises,
+    required this.id,
     required this.startedAt,
+    required this.exercises,
+    this.editing,
   });
 
+  bool get isEditing => editing != null;
+
+  WorkoutInProgressState copyWith({List<Exercise>? exercises}) =>
+      WorkoutInProgressState(
+        id: id,
+        startedAt: startedAt,
+        exercises: exercises ?? this.exercises,
+        editing: editing,
+      );
+
   @override
-  List<Object?> get props => [exercises, startedAt];
+  List<Object?> get props => [id, startedAt, exercises, editing];
 }
 
 class WorkoutCompleteState extends WorkoutState {

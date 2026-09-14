@@ -8,7 +8,13 @@ abstract class WorkoutTimerEvent extends Equatable {
 }
 
 class WorkoutTimerStarted extends WorkoutTimerEvent {
-  const WorkoutTimerStarted();
+  /// Seconds already elapsed — non-zero when resuming a draft or editing.
+  final int from;
+
+  const WorkoutTimerStarted({this.from = 0});
+
+  @override
+  List<Object?> get props => [from];
 }
 
 class WorkoutTimerTicked extends WorkoutTimerEvent {

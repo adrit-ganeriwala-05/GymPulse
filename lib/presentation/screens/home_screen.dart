@@ -5,6 +5,8 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../../domain/entities/workout.dart';
 import '../../domain/streak_rules.dart';
+import '../../domain/usecases/discard_draft.dart';
+import '../../domain/usecases/get_draft.dart';
 import '../../domain/usecases/get_workouts.dart';
 import '../../injection_container.dart';
 import '../blocs/streak/streak_bloc.dart';
@@ -25,6 +27,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   String _userName = 'Athlete';
   late Future<List<Workout>> _workoutsFuture;
+  Workout? _draft;
 
   // One-shot loads belong in initState. StreakLoaded is dispatched by the
   // route's BlocProvider (router.dart), not here — one owner (BUG-14).
@@ -33,9 +36,27 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     _userName = sl<SharedPreferences>().getString('user_name') ?? 'Athlete';
     _workoutsFuture = sl<GetWorkouts>().call();
+    _loadDraft();
   }
 
   void _reload() => setState(() => _workoutsFuture = sl<GetWorkouts>().call());
+
+  Future<void> _loadDraft() async {
+    Workout? draft;
+    try {
+      draft = await sl<GetDraft>().call();
+    } catch (_) {
+      draft = null; // banner is a convenience; the DB error surfaces below
+    }
+    if (mounted) setState(() => _draft = draft);
+  }
+
+  Future<void> _discardDraft() async {
+    final d = _draft;
+    if (d == null) return;
+    await sl<DiscardDraft>().call(d.id);
+    if (mounted) setState(() => _draft = null);
+  }
 
   // FIX: greeting changed from time-of-day to "Welcome, name 👋" per spec
   String _greeting() => 'Welcome, $_userName 👋';
@@ -256,6 +277,24 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               const SizedBox(height: 20),
 
+              if (_draft != null) ...[
+                Card(
+                  child: ListTile(
+                    leading: const Icon(Icons.pending_actions, color: Color(0xFF6B4226)),
+                    title: Text('Workout in progress',
+                        style: Theme.of(context).textTheme.titleMedium),
+                    subtitle: Text(
+                      '${_draft!.exercises.length} exercises · started ${formatDayMonth(_draft!.date, shortDay: true)}',
+                      style: GoogleFonts.dmSans(fontSize: 13),
+                    ),
+                    trailing: TextButton(
+                      onPressed: _discardDraft,
+                      child: const Text('Discard'),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
               SizedBox(
                 height: 60,
                 child: ElevatedButton(
@@ -269,7 +308,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                   child: Text(
-                    'Begin Workout 💪',
+                    _draft != null ? 'Resume Workout ▶' : 'Begin Workout 💪',
                     style: GoogleFonts.dmSans(
                       fontSize: 16,
                       fontWeight: FontWeight.w600,

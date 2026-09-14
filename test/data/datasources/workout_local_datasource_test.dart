@@ -39,7 +39,7 @@ void main() {
 
   test('save then read round-trips values and preserves order', () async {
     final ds = WorkoutLocalDatasourceImpl();
-    await ds.saveWorkout(sample());
+    await ds.upsertWorkout(sample(), status: 'done');
     final all = await ds.getWorkouts();
     expect(all, hasLength(1));
     final w = all.single;
@@ -51,8 +51,8 @@ void main() {
 
   test('getWorkouts returns newest first', () async {
     final ds = WorkoutLocalDatasourceImpl();
-    await ds.saveWorkout(sample(id: 'old', date: DateTime(2025, 6, 1)));
-    await ds.saveWorkout(sample(id: 'new', date: DateTime(2025, 6, 3)));
+    await ds.upsertWorkout(sample(id: 'old', date: DateTime(2025, 6, 1)), status: 'done');
+    await ds.upsertWorkout(sample(id: 'new', date: DateTime(2025, 6, 3)), status: 'done');
     final all = await ds.getWorkouts();
     expect(all.map((w) => w.id), ['new', 'old']);
   });
@@ -60,7 +60,7 @@ void main() {
   test('foreign keys are enforced: deleting a workout cascades (BUG-05)',
       () async {
     final ds = WorkoutLocalDatasourceImpl();
-    await ds.saveWorkout(sample());
+    await ds.upsertWorkout(sample(), status: 'done');
     final db = await WorkoutDatabase.instance.database;
     final fk = await db.rawQuery('PRAGMA foreign_keys');
     expect(fk.first.values.first, 1, reason: 'onConfigure must enable FKs');
@@ -72,11 +72,61 @@ void main() {
   test('re-saving the same id replaces children instead of duplicating',
       () async {
     final ds = WorkoutLocalDatasourceImpl();
-    await ds.saveWorkout(sample());
-    await ds.saveWorkout(sample());
+    await ds.upsertWorkout(sample(), status: 'done');
+    await ds.upsertWorkout(sample(), status: 'done');
     final db = await WorkoutDatabase.instance.database;
     expect(await db.query('exercises'), hasLength(2));
     expect(await db.query('sets'), hasLength(3));
+  });
+
+  test('drafts are excluded from getWorkouts and returned by getDraft', () async {
+    final ds = WorkoutLocalDatasourceImpl();
+    await ds.upsertWorkout(sample(id: 'd1'), status: 'draft');
+    await ds.upsertWorkout(sample(id: 'w1'), status: 'done');
+    expect((await ds.getWorkouts()).map((w) => w.id), ['w1']);
+    expect((await ds.getDraft())?.id, 'd1');
+  });
+
+  test('finishing a draft flips it in place: no second row', () async {
+    final ds = WorkoutLocalDatasourceImpl();
+    await ds.upsertWorkout(sample(id: 'd1'), status: 'draft');
+    await ds.upsertWorkout(sample(id: 'd1'), status: 'done');
+    expect(await ds.getDraft(), isNull);
+    expect((await ds.getWorkouts()).map((w) => w.id), ['d1']);
+    final db = await WorkoutDatabase.instance.database;
+    expect(await db.query('workouts'), hasLength(1));
+  });
+
+  test('deleteWorkout cascades to exercises and sets', () async {
+    final ds = WorkoutLocalDatasourceImpl();
+    await ds.upsertWorkout(sample(), status: 'done');
+    await ds.deleteWorkout('w1');
+    final db = await WorkoutDatabase.instance.database;
+    expect(await db.query('exercises'), isEmpty);
+    expect(await db.query('sets'), isEmpty);
+  });
+
+  test('v1 database migrates to v2 with existing workouts intact', () async {
+    // Build a v1 file exactly as the pre-change schema did (no status col).
+    final path = await dbPath();
+    final v1 = await openDatabase(path, version: 1, onCreate: (db, _) async {
+      await db.execute('CREATE TABLE workouts (id TEXT PRIMARY KEY, date TEXT NOT NULL, duration_seconds INTEGER NOT NULL DEFAULT 0)');
+      await db.execute('CREATE TABLE exercises (id TEXT PRIMARY KEY, workout_id TEXT NOT NULL, name TEXT NOT NULL, position INTEGER NOT NULL DEFAULT 0, FOREIGN KEY (workout_id) REFERENCES workouts(id) ON DELETE CASCADE)');
+      await db.execute('CREATE TABLE sets (id TEXT PRIMARY KEY, exercise_id TEXT NOT NULL, reps INTEGER NOT NULL, weight REAL NOT NULL, position INTEGER NOT NULL DEFAULT 0, FOREIGN KEY (exercise_id) REFERENCES exercises(id) ON DELETE CASCADE)');
+    });
+    await v1.insert('workouts', {'id': 'legacy', 'date': '2025-01-05T10:00:00.000', 'duration_seconds': 1200});
+    await v1.insert('exercises', {'id': 'e1', 'workout_id': 'legacy', 'name': 'Row', 'position': 0});
+    await v1.insert('sets', {'id': 's1', 'exercise_id': 'e1', 'reps': 12, 'weight': 40.0, 'position': 0});
+    expect(await v1.getVersion(), 1);
+    await v1.close();
+
+    // Opening through the app's WorkoutDatabase runs _onUpgrade.
+    final db = await WorkoutDatabase.instance.database;
+    expect(await db.getVersion(), WorkoutDatabase.schemaVersion);
+    final all = await WorkoutLocalDatasourceImpl().getWorkouts();
+    expect(all.map((w) => w.id), ['legacy']);
+    expect(all.single.exercises.single.sets.single.weight, 40.0);
+    expect(await WorkoutLocalDatasourceImpl().getDraft(), isNull);
   });
 
   test('concurrent first access opens the database once (BUG-12)', () async {

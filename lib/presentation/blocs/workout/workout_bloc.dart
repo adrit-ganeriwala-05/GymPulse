@@ -1,15 +1,32 @@
+import 'package:bloc_concurrency/bloc_concurrency.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../../domain/entities/exercise.dart';
 import '../../../domain/entities/workout.dart';
+import '../../../domain/usecases/discard_draft.dart';
+import '../../../domain/usecases/get_draft.dart';
+import '../../../domain/usecases/save_draft.dart';
 import '../../../domain/usecases/save_workout.dart';
 import '../../../domain/usecases/update_streak.dart';
+import '../../../domain/usecases/update_workout.dart';
 import 'workout_event.dart';
 import 'workout_state.dart';
 
+/// Active-session state machine.
+///
+/// Every mutation is written through to the draft row immediately, so the
+/// session survives backgrounding, navigation and process death without any
+/// lifecycle hook (AppLifecycleState.paused does not fire on a kill).
+/// Editing an already-finished workout reuses the same states with
+/// [WorkoutInProgressState.editing] set; edits never write a draft and never
+/// touch the streak.
 class WorkoutBloc extends Bloc<WorkoutEvent, WorkoutState> {
   final SaveWorkout saveWorkout;
+  final UpdateWorkout updateWorkout;
+  final SaveDraft saveDraft;
+  final GetDraft getDraft;
+  final DiscardDraft discardDraft;
   final UpdateStreak updateStreak;
 
   /// Injectable clock; stamps [WorkoutInProgressState.startedAt].
@@ -17,37 +34,78 @@ class WorkoutBloc extends Bloc<WorkoutEvent, WorkoutState> {
 
   WorkoutBloc({
     required this.saveWorkout,
+    required this.updateWorkout,
+    required this.saveDraft,
+    required this.getDraft,
+    required this.discardDraft,
     required this.updateStreak,
     DateTime Function()? clock,
   })  : now = clock ?? DateTime.now,
         super(const WorkoutInitialState()) {
     on<WorkoutStarted>(_onStarted);
-    on<ExerciseAdded>(_onExerciseAdded);
-    on<SetLogged>(_onSetLogged);
-    on<SetRemoved>(_onSetRemoved);
-    on<ExerciseRemoved>(_onExerciseRemoved);
+    on<WorkoutEditStarted>(_onEditStarted);
+    // Mutations are read-emit-persist; serialise them so two quick taps
+    // cannot persist an older snapshot after a newer one.
+    on<ExerciseAdded>(_onExerciseAdded, transformer: sequential());
+    on<SetLogged>(_onSetLogged, transformer: sequential());
+    on<SetRemoved>(_onSetRemoved, transformer: sequential());
+    on<ExerciseRemoved>(_onExerciseRemoved, transformer: sequential());
+    on<WorkoutDiscarded>(_onDiscarded);
     on<WorkoutFinished>(_onFinished);
   }
 
-  void _onStarted(WorkoutStarted event, Emitter<WorkoutState> emit) {
-    emit(WorkoutInProgressState(exercises: const [], startedAt: now()));
+  Future<void> _onStarted(
+    WorkoutStarted event,
+    Emitter<WorkoutState> emit,
+  ) async {
+    emit(const WorkoutLoadingState());
+    Workout? draft;
+    try {
+      draft = await getDraft();
+    } catch (e, s) {
+      addError(e, s);
+    }
+    if (draft != null) {
+      emit(WorkoutInProgressState(
+        id: draft.id,
+        startedAt: draft.date,
+        exercises: draft.exercises,
+      ));
+    } else {
+      emit(WorkoutInProgressState(
+        id: const Uuid().v4(),
+        startedAt: now(),
+        exercises: const [],
+      ));
+    }
   }
 
-  void _onExerciseAdded(ExerciseAdded event, Emitter<WorkoutState> emit) {
-    if (state is! WorkoutInProgressState) return;
-    final current = state as WorkoutInProgressState;
-    final alreadyExists = current.exercises.any((e) => e.name == event.name);
-    if (alreadyExists) return;
+  void _onEditStarted(WorkoutEditStarted event, Emitter<WorkoutState> emit) {
+    final w = event.workout;
     emit(WorkoutInProgressState(
-      exercises: [
-        ...current.exercises,
-        Exercise(name: event.name, sets: const []),
-      ],
-      startedAt: current.startedAt,
+      id: w.id,
+      startedAt: w.date,
+      exercises: w.exercises,
+      editing: w,
     ));
   }
 
-  void _onSetLogged(SetLogged event, Emitter<WorkoutState> emit) {
+  Future<void> _onExerciseAdded(
+    ExerciseAdded event,
+    Emitter<WorkoutState> emit,
+  ) async {
+    if (state is! WorkoutInProgressState) return;
+    final current = state as WorkoutInProgressState;
+    if (current.exercises.any((e) => e.name == event.name)) return;
+    final next = current.copyWith(exercises: [
+      ...current.exercises,
+      Exercise(name: event.name, sets: const []),
+    ]);
+    emit(next);
+    await _persist(next);
+  }
+
+  Future<void> _onSetLogged(SetLogged event, Emitter<WorkoutState> emit) async {
     if (state is! WorkoutInProgressState) return;
     final current = state as WorkoutInProgressState;
     final exercises = List<Exercise>.from(current.exercises);
@@ -63,11 +121,12 @@ class WorkoutBloc extends Bloc<WorkoutEvent, WorkoutState> {
         sets: [...existing.sets, newSet],
       );
     }
-
-    emit(WorkoutInProgressState(exercises: exercises, startedAt: current.startedAt));
+    final next = current.copyWith(exercises: exercises);
+    emit(next);
+    await _persist(next);
   }
 
-  void _onSetRemoved(SetRemoved event, Emitter<WorkoutState> emit) {
+  Future<void> _onSetRemoved(SetRemoved event, Emitter<WorkoutState> emit) async {
     if (state is! WorkoutInProgressState) return;
     final current = state as WorkoutInProgressState;
     final exercises = current.exercises.map((e) {
@@ -76,16 +135,49 @@ class WorkoutBloc extends Bloc<WorkoutEvent, WorkoutState> {
       final sets = List<ExerciseSet>.from(e.sets)..removeAt(event.setIndex);
       return Exercise(name: e.name, sets: sets);
     }).toList();
-    emit(WorkoutInProgressState(exercises: exercises, startedAt: current.startedAt));
+    final next = current.copyWith(exercises: exercises);
+    emit(next);
+    await _persist(next);
   }
 
-  void _onExerciseRemoved(ExerciseRemoved event, Emitter<WorkoutState> emit) {
+  Future<void> _onExerciseRemoved(
+    ExerciseRemoved event,
+    Emitter<WorkoutState> emit,
+  ) async {
     if (state is! WorkoutInProgressState) return;
     final current = state as WorkoutInProgressState;
-    emit(WorkoutInProgressState(
+    final next = current.copyWith(
       exercises: current.exercises.where((e) => e.name != event.name).toList(),
-      startedAt: current.startedAt,
-    ));
+    );
+    emit(next);
+    await _persist(next);
+  }
+
+  /// Write-through. In-memory state stays authoritative: a failed write is
+  /// logged, not surfaced, and the next mutation retries with a full snapshot.
+  Future<void> _persist(WorkoutInProgressState s) async {
+    if (s.isEditing) return;
+    try {
+      await saveDraft(_toWorkout(s, durationSeconds: 0));
+    } catch (e, st) {
+      addError(e, st);
+    }
+  }
+
+  Future<void> _onDiscarded(
+    WorkoutDiscarded event,
+    Emitter<WorkoutState> emit,
+  ) async {
+    if (state is! WorkoutInProgressState) return;
+    final current = state as WorkoutInProgressState;
+    if (!current.isEditing) {
+      try {
+        await discardDraft(current.id);
+      } catch (e, s) {
+        addError(e, s);
+      }
+    }
+    emit(const WorkoutInitialState());
   }
 
   Future<void> _onFinished(
@@ -94,17 +186,18 @@ class WorkoutBloc extends Bloc<WorkoutEvent, WorkoutState> {
   ) async {
     if (state is! WorkoutInProgressState) return;
     final current = state as WorkoutInProgressState;
-    final workout = Workout(
-      id: const Uuid().v4(),
-      date: current.startedAt,
-      durationSeconds: event.durationSeconds,
-      exercises: current.exercises,
-    );
+    final workout = _toWorkout(current, durationSeconds: event.durationSeconds);
 
-    // FIX: try/catch so save failures emit error state instead of crashing
     try {
-      await saveWorkout(workout);
-      await updateStreak();
+      if (current.isEditing) {
+        // An edit is not a training event: no streak side-effect.
+        await updateWorkout(workout);
+      } else {
+        // Same id as the draft row → the upsert flips it to 'done' in one
+        // statement; there is never a moment with both a draft and a copy.
+        await saveWorkout(workout);
+        await updateStreak();
+      }
       emit(WorkoutCompleteState(workout: workout));
     } catch (e, s) {
       addError(e, s); // routes to AppBlocObserver.onError
@@ -113,12 +206,17 @@ class WorkoutBloc extends Bloc<WorkoutEvent, WorkoutState> {
         exercises: current.exercises,
       ));
       // Return to the editable state so the user can remove the offending
-      // set/exercise and retry. Every mutation handler gates on
-      // WorkoutInProgressState, so staying in the error state would lock them out.
-      emit(WorkoutInProgressState(
-        exercises: current.exercises,
-        startedAt: current.startedAt,
-      ));
+      // set/exercise and retry (BUG-26).
+      emit(current);
     }
   }
+
+  Workout _toWorkout(WorkoutInProgressState s, {required int durationSeconds}) =>
+      Workout(
+        id: s.id,
+        // An edit keeps its original date; a session is dated from its start.
+        date: s.editing?.date ?? s.startedAt,
+        durationSeconds: durationSeconds,
+        exercises: s.exercises,
+      );
 }

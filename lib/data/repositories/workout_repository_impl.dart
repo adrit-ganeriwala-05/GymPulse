@@ -12,6 +12,23 @@ class WorkoutRepositoryImpl implements WorkoutRepository {
   Future<List<Workout>> getWorkouts() => datasource.getWorkouts();
 
   @override
-  Future<void> saveWorkout(Workout workout) =>
-      datasource.saveWorkout(WorkoutModel.fromEntity(workout));
+  Future<void> saveWorkout(Workout workout) => datasource.upsertWorkout(
+        WorkoutModel.fromEntity(workout),
+        status: WorkoutLocalDatasourceImpl.statusDone,
+      );
+
+  @override
+  Future<void> updateWorkout(Workout workout) => saveWorkout(workout);
+
+  @override
+  Future<void> saveDraft(Workout workout) => datasource.upsertWorkout(
+        WorkoutModel.fromEntity(workout),
+        status: WorkoutLocalDatasourceImpl.statusDraft,
+      );
+
+  @override
+  Future<Workout?> getDraft() => datasource.getDraft();
+
+  @override
+  Future<void> deleteWorkout(String id) => datasource.deleteWorkout(id);
 }

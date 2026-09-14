@@ -6,24 +6,43 @@ import '../models/workout_model.dart';
 import 'workout_database.dart';
 
 abstract class WorkoutLocalDatasource {
-  Future<void> saveWorkout(WorkoutModel workout);
+  /// Inserts or fully replaces the workout row and all its children.
+  Future<void> upsertWorkout(WorkoutModel workout, {required String status});
+
+  /// Finished workouts only, newest first.
   Future<List<WorkoutModel>> getWorkouts();
+
+  /// The single in-progress draft, if any.
+  Future<WorkoutModel?> getDraft();
+
+  Future<void> deleteWorkout(String id);
 }
 
 class WorkoutLocalDatasourceImpl implements WorkoutLocalDatasource {
+  static const statusDone = 'done';
+  static const statusDraft = 'draft';
+
   Future<Database> get _db async => WorkoutDatabase.instance.database;
 
   @override
-  Future<void> saveWorkout(WorkoutModel workout) async {
+  Future<void> upsertWorkout(
+    WorkoutModel workout, {
+    required String status,
+  }) async {
     final db = await _db;
 
     await db.transaction((txn) async {
+      // INSERT OR REPLACE on the parent. With foreign_keys ON (set in
+      // onConfigure) the REPLACE's implicit DELETE cascades to exercises and
+      // sets, so the reinsert below cannot duplicate children. This is the
+      // documented replace trap, used deliberately and relying on BUG-05's fix.
       await txn.insert(
         'workouts',
         {
           'id': workout.id,
           'date': workout.date.toIso8601String(),
           'duration_seconds': workout.durationSeconds,
+          'status': status,
         },
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
@@ -56,8 +75,43 @@ class WorkoutLocalDatasourceImpl implements WorkoutLocalDatasource {
   @override
   Future<List<WorkoutModel>> getWorkouts() async {
     final db = await _db;
+    final rows = await db.query(
+      'workouts',
+      where: 'status = ?',
+      whereArgs: [statusDone],
+      orderBy: 'date DESC',
+    );
+    return _hydrate(db, rows);
+  }
 
-    final workoutMaps = await db.query('workouts', orderBy: 'date DESC');
+  @override
+  Future<WorkoutModel?> getDraft() async {
+    final db = await _db;
+    final rows = await db.query(
+      'workouts',
+      where: 'status = ?',
+      whereArgs: [statusDraft],
+      orderBy: 'date DESC',
+      limit: 1,
+    );
+    final drafts = await _hydrate(db, rows);
+    return drafts.isEmpty ? null : drafts.first;
+  }
+
+  @override
+  Future<void> deleteWorkout(String id) async {
+    final db = await _db;
+    // Children go via ON DELETE CASCADE.
+    await db.delete('workouts', where: 'id = ?', whereArgs: [id]);
+  }
+
+  // N+1 by design: one query per workout, one per exercise. At a solo
+  // user's volume (a few hundred workouts, ~5 exercises each) this is a few
+  // thousand cheap local reads. Revisit with a JOIN past ~2000 workouts.
+  Future<List<WorkoutModel>> _hydrate(
+    Database db,
+    List<Map<String, Object?>> workoutMaps,
+  ) async {
     final List<WorkoutModel> workouts = [];
 
     for (final workoutMap in workoutMaps) {
@@ -82,16 +136,14 @@ class WorkoutLocalDatasourceImpl implements WorkoutLocalDatasource {
           orderBy: 'position ASC',
         );
 
-        final sets = setMaps
-            .map((s) => ExerciseSetModel(
-                  reps: s['reps'] as int,
-                  weight: (s['weight'] as num).toDouble(),
-                ))
-            .toList();
-
         exercises.add(ExerciseModel(
           name: exerciseMap['name'] as String,
-          modelSets: sets,
+          modelSets: setMaps
+              .map((s) => ExerciseSetModel(
+                    reps: s['reps'] as int,
+                    weight: (s['weight'] as num).toDouble(),
+                  ))
+              .toList(),
         ));
       }
 

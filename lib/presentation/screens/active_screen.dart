@@ -22,24 +22,22 @@ import '../widgets/exercise_log_card.dart';
 class ActiveScreen extends StatelessWidget {
   const ActiveScreen({super.key});
 
-  // canPop:false routes the system back gesture here instead of popping. A
-  // session with logged exercises asks before discarding; an empty one
-  // leaves freely. Covers back gestures only — process death / backgrounding
-  // needs draft persistence (see FEATURE_PROPOSALS.md, Feature A).
+  // canPop:false routes the system back gesture here instead of popping.
   Future<void> _onPopInvoked(BuildContext context, bool didPop) async {
     if (didPop) return;
     final state = context.read<WorkoutBloc>().state;
-    final hasWork =
-        state is WorkoutInProgressState && state.exercises.isNotEmpty;
-    if (!hasWork) {
+    // A session is written through as a draft, so leaving is lossless (Home
+    // offers Resume/Discard). Only an unsaved *edit* needs confirming.
+    final unsavedEdit = state is WorkoutInProgressState && state.isEditing;
+    if (!unsavedEdit) {
       context.go('/');
       return;
     }
     final discard = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Discard workout?'),
-        content: const Text('Logged sets will be lost.'),
+        title: const Text('Discard changes?'),
+        content: const Text('Edits to this workout will be lost.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -62,7 +60,13 @@ class ActiveScreen extends StatelessWidget {
       onPopInvokedWithResult: (didPop, _) => _onPopInvoked(context, didPop),
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('Active Workout'),
+          title: BlocBuilder<WorkoutBloc, WorkoutState>(
+          builder: (_, s) => Text(
+            s is WorkoutInProgressState && s.isEditing
+                ? 'Edit Workout'
+                : 'Active Workout',
+          ),
+        ),
           backgroundColor: Colors.transparent,
           elevation: 0,
         ),
@@ -79,13 +83,28 @@ class _ActiveBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
-      children: const [
-        _WorkoutTimerSection(),
-        SizedBox(height: 20),
-        _ExerciseSection(),
-      ],
+    // Start the stopwatch once, when the session first becomes known, seeded
+    // with whatever has already elapsed (0 for new, wall-clock delta for a
+    // resumed draft, saved duration for an edit).
+    return BlocListener<WorkoutBloc, WorkoutState>(
+      listenWhen: (prev, cur) =>
+          cur is WorkoutInProgressState &&
+          (prev is WorkoutInitialState || prev is WorkoutLoadingState),
+      listener: (ctx, state) {
+        final s = state as WorkoutInProgressState;
+        final from = s.isEditing
+            ? s.editing!.durationSeconds
+            : DateTime.now().difference(s.startedAt).inSeconds.clamp(0, 86400);
+        ctx.read<WorkoutTimerBloc>().add(WorkoutTimerStarted(from: from));
+      },
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+        children: const [
+          _WorkoutTimerSection(),
+          SizedBox(height: 20),
+          _ExerciseSection(),
+        ],
+      ),
     );
   }
 }
@@ -435,6 +454,12 @@ class _ExerciseSectionState extends State<_ExerciseSection> {
                     ? settingsState.weightUnit
                     : 'kg';
 
+                if (workoutState is WorkoutLoadingState) {
+                  return const Padding(
+                    padding: EdgeInsets.all(24),
+                    child: Center(child: CircularProgressIndicator()),
+                  );
+                }
                 if (workoutState is! WorkoutInProgressState ||
                     workoutState.exercises.isEmpty) {
                   return Padding(

@@ -1,5 +1,7 @@
 import 'package:equatable/equatable.dart';
 
+import '../../../domain/entities/workout.dart';
+
 abstract class WorkoutEvent extends Equatable {
   const WorkoutEvent();
 
@@ -7,8 +9,24 @@ abstract class WorkoutEvent extends Equatable {
   List<Object?> get props => [];
 }
 
+/// Begin a session, resuming a persisted draft if one exists.
 class WorkoutStarted extends WorkoutEvent {
   const WorkoutStarted();
+}
+
+/// Open an already-finished workout for in-place editing.
+class WorkoutEditStarted extends WorkoutEvent {
+  final Workout workout;
+
+  const WorkoutEditStarted(this.workout);
+
+  @override
+  List<Object?> get props => [workout];
+}
+
+/// Abandon the current draft (deletes the persisted row).
+class WorkoutDiscarded extends WorkoutEvent {
+  const WorkoutDiscarded();
 }
 
 class ExerciseAdded extends WorkoutEvent {

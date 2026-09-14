@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../domain/entities/workout.dart';
 import '../injection_container.dart';
 import 'blocs/rest_timer/rest_timer_bloc.dart';
 import 'blocs/settings/settings_bloc.dart';
@@ -13,7 +14,6 @@ import 'blocs/streak/streak_event.dart';
 import 'blocs/workout/workout_bloc.dart';
 import 'blocs/workout/workout_event.dart';
 import 'blocs/workout_timer/workout_timer_bloc.dart';
-import 'blocs/workout_timer/workout_timer_event.dart';
 import 'screens/active_screen.dart';
 import 'screens/calendar_screen.dart';
 import 'screens/history_screen.dart';
@@ -52,14 +52,21 @@ GoRouter createRouter(bool onboardingComplete) {
       ),
       GoRoute(
         path: '/active',
+        // `extra` carries a finished Workout to edit; absent means start (or
+        // resume the persisted draft). The timer is seeded by ActiveScreen once
+        // WorkoutBloc knows how many seconds have already elapsed.
         builder: (context, state) => MultiBlocProvider(
           providers: [
             BlocProvider(
-              create: (_) => sl<WorkoutBloc>()..add(const WorkoutStarted()),
+              create: (_) {
+                final editing = state.extra;
+                return sl<WorkoutBloc>()
+                  ..add(editing is Workout
+                      ? WorkoutEditStarted(editing)
+                      : const WorkoutStarted());
+              },
             ),
-            BlocProvider(
-              create: (_) => sl<WorkoutTimerBloc>()..add(const WorkoutTimerStarted()),
-            ),
+            BlocProvider(create: (_) => sl<WorkoutTimerBloc>()),
             BlocProvider(create: (_) => sl<RestTimerBloc>()),
             // FIX: SettingsBloc needed for weight unit toggle on active screen
             BlocProvider(

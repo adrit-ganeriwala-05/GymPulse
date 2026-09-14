@@ -9,11 +9,16 @@ import 'data/repositories/workout_repository_impl.dart';
 import 'domain/repositories/settings_repository.dart';
 import 'domain/repositories/streak_repository.dart';
 import 'domain/repositories/workout_repository.dart';
+import 'domain/usecases/delete_workout.dart';
+import 'domain/usecases/discard_draft.dart';
+import 'domain/usecases/get_draft.dart';
 import 'domain/usecases/get_streak.dart';
 import 'domain/usecases/get_weight_unit.dart';
 import 'domain/usecases/get_workouts.dart';
 import 'domain/usecases/save_weight_unit.dart';
+import 'domain/usecases/save_draft.dart';
 import 'domain/usecases/save_workout.dart';
+import 'domain/usecases/update_workout.dart';
 import 'domain/usecases/update_streak.dart';
 import 'presentation/blocs/rest_timer/rest_timer_bloc.dart';
 import 'presentation/blocs/settings/settings_bloc.dart';
@@ -47,6 +52,12 @@ Future<void> init() async {
 
   sl.registerSingleton(GetWorkouts(sl<WorkoutRepository>()));
   sl.registerSingleton(SaveWorkout(sl<WorkoutRepository>()));
+  // Stateless use cases: one instance is correct, so singletons not factories.
+  sl.registerSingleton(UpdateWorkout(sl<WorkoutRepository>()));
+  sl.registerSingleton(SaveDraft(sl<WorkoutRepository>()));
+  sl.registerSingleton(GetDraft(sl<WorkoutRepository>()));
+  sl.registerSingleton(DiscardDraft(sl<WorkoutRepository>()));
+  sl.registerSingleton(DeleteWorkout(sl<WorkoutRepository>()));
   sl.registerSingleton(GetStreak(sl<StreakRepository>()));
   sl.registerSingleton(UpdateStreak(sl<StreakRepository>()));
   sl.registerSingleton(GetWeightUnit(sl<SettingsRepository>()));
@@ -63,6 +74,10 @@ Future<void> init() async {
   sl.registerFactory<WorkoutBloc>(
     () => WorkoutBloc(
       saveWorkout: sl<SaveWorkout>(),
+      updateWorkout: sl<UpdateWorkout>(),
+      saveDraft: sl<SaveDraft>(),
+      getDraft: sl<GetDraft>(),
+      discardDraft: sl<DiscardDraft>(),
       updateStreak: sl<UpdateStreak>(),
     ),
   );
