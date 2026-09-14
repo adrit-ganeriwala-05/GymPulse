@@ -433,6 +433,12 @@ class _ExerciseSectionState extends State<_ExerciseSection> {
                             );
                         _showRestTimerSheet(context);
                       },
+                      onRemoveSet: (i) => context.read<WorkoutBloc>().add(
+                            SetRemoved(exerciseName: exercise.name, setIndex: i),
+                          ),
+                      onRemoveExercise: () => context
+                          .read<WorkoutBloc>()
+                          .add(ExerciseRemoved(exercise.name)),
                     );
                   }).toList(),
                 );

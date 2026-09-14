@@ -22,6 +22,8 @@ class WorkoutBloc extends Bloc<WorkoutEvent, WorkoutState> {
     on<WorkoutStarted>(_onStarted);
     on<ExerciseAdded>(_onExerciseAdded);
     on<SetLogged>(_onSetLogged);
+    on<SetRemoved>(_onSetRemoved);
+    on<ExerciseRemoved>(_onExerciseRemoved);
     on<WorkoutFinished>(_onFinished);
     on<HistoryRequested>(_onHistoryRequested);
   }
@@ -63,6 +65,26 @@ class WorkoutBloc extends Bloc<WorkoutEvent, WorkoutState> {
     emit(WorkoutInProgressState(exercises: exercises));
   }
 
+  void _onSetRemoved(SetRemoved event, Emitter<WorkoutState> emit) {
+    if (state is! WorkoutInProgressState) return;
+    final current = state as WorkoutInProgressState;
+    final exercises = current.exercises.map((e) {
+      if (e.name != event.exerciseName) return e;
+      if (event.setIndex < 0 || event.setIndex >= e.sets.length) return e;
+      final sets = List<ExerciseSet>.from(e.sets)..removeAt(event.setIndex);
+      return Exercise(name: e.name, sets: sets);
+    }).toList();
+    emit(WorkoutInProgressState(exercises: exercises));
+  }
+
+  void _onExerciseRemoved(ExerciseRemoved event, Emitter<WorkoutState> emit) {
+    if (state is! WorkoutInProgressState) return;
+    final current = state as WorkoutInProgressState;
+    emit(WorkoutInProgressState(
+      exercises: current.exercises.where((e) => e.name != event.name).toList(),
+    ));
+  }
+
   Future<void> _onFinished(
     WorkoutFinished event,
     Emitter<WorkoutState> emit,
@@ -86,6 +108,10 @@ class WorkoutBloc extends Bloc<WorkoutEvent, WorkoutState> {
         message: 'Failed to save workout',
         exercises: current.exercises,
       ));
+      // Return to the editable state so the user can remove the offending
+      // set/exercise and retry. Every mutation handler gates on
+      // WorkoutInProgressState, so staying in the error state would lock them out.
+      emit(WorkoutInProgressState(exercises: current.exercises));
     }
   }
 
