@@ -1,6 +1,7 @@
 import 'dart:developer' as developer;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:go_router/go_router.dart';
@@ -96,6 +97,9 @@ class GymPulseApp extends StatelessWidget {
         ),
         appBarTheme: AppBarTheme(
           backgroundColor: const Color(0xFFFDF8F3),
+          // Android draws status-bar icons per this style; iOS infers from
+          // the background. Without it the clock was cream-on-cream.
+          systemOverlayStyle: SystemUiOverlayStyle.dark,
           elevation: 0,
           scrolledUnderElevation: 0,
           centerTitle: true,

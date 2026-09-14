@@ -14,6 +14,7 @@ import '../blocs/streak/streak_bloc.dart';
 import '../blocs/streak/streak_event.dart';
 import '../blocs/streak/streak_state.dart';
 import '../format.dart';
+import '../router.dart';
 import '../widgets/load_error_view.dart';
 import '../widgets/workout_summary_card.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -25,7 +26,7 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with RouteAware {
   String _userName = 'Athlete';
   late Future<List<Workout>> _workoutsFuture;
   Workout? _draft;
@@ -46,6 +47,28 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() {
       _workoutsFuture = sl<GetWorkouts>().call();
     });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (route != null) routeObserver.subscribe(this, route);
+  }
+
+  @override
+  void dispose() {
+    routeObserver.unsubscribe(this);
+    super.dispose();
+  }
+
+  /// /active (and /history, /calendar) are pushed above Home, so Home is
+  /// not recreated when they finish. Refresh everything that could change.
+  @override
+  void didPopNext() {
+    _reload();
+    _loadDraft();
+    context.read<StreakBloc>().add(const StreakLoaded());
   }
 
   Future<void> _loadDraft() async {

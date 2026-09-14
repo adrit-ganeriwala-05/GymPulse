@@ -20,8 +20,13 @@ import 'screens/history_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/onboarding_screen.dart';
 
+/// Lets Home reload when a route pushed above it pops (finish / back from
+/// /active). Home is no longer torn down on the way to /active — see below.
+final RouteObserver<ModalRoute<void>> routeObserver = RouteObserver<ModalRoute<void>>();
+
 GoRouter createRouter(bool onboardingComplete) {
   return GoRouter(
+    observers: [routeObserver],
     initialLocation: onboardingComplete ? '/' : '/onboarding',
     redirect: (context, state) {
       final onboardingDone = sl<SharedPreferences>().getBool('onboarding_complete') ?? false;
@@ -49,9 +54,13 @@ GoRouter createRouter(bool onboardingComplete) {
           ],
           child: const HomeScreen(),
         ),
-      ),
+        routes: [
       GoRoute(
-        path: '/active',
+        // Child of '/' on purpose: go('/active') then builds the stack
+        // ['/', '/active'], so the Navigator can pop. As a root route,
+        // go_router's popRoute never calls maybePop and PopScope is bypassed —
+        // Android's system back exited the app (found on the emulator).
+        path: 'active',
         // `extra` carries a finished Workout to edit; absent means start (or
         // resume the persisted draft). The timer is seeded by ActiveScreen once
         // WorkoutBloc knows how many seconds have already elapsed.
@@ -75,6 +84,8 @@ GoRouter createRouter(bool onboardingComplete) {
           ],
           child: const ActiveScreen(),
         ),
+      ),
+        ],
       ),
       GoRoute(
         path: '/history',

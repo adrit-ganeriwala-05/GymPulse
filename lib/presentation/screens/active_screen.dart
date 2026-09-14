@@ -112,9 +112,11 @@ class _ActiveBody extends StatelessWidget {
         final s = state as WorkoutInProgressState;
         final from =
             s.isEditing ? s.editing!.durationSeconds : s.elapsedSeconds;
+        // Edit mode starts paused: the duration is a saved fact being
+        // edited, not a live session — a running clock would inflate it.
         ctx.read<WorkoutTimerBloc>().add(WorkoutTimerStarted(
           from: from,
-          paused: !s.isEditing && s.timerPaused,
+          paused: s.isEditing || s.timerPaused,
         ));
       },
       child: BlocListener<WorkoutTimerBloc, WorkoutTimerState>(

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gympulse/domain/entities/exercise.dart';
 import 'package:gympulse/domain/entities/workout.dart';
+import 'package:gympulse/presentation/blocs/workout/workout_event.dart';
 import 'package:gympulse/presentation/screens/active_screen.dart';
 
 import '../../helpers/fakes.dart';
@@ -102,6 +103,22 @@ void main() {
     await tester.pump(const Duration(milliseconds: 50));
     expect(find.text('Bench'), findsNothing);
     expect(repo.draft!.exercises, isEmpty);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('edit mode starts with the clock paused at the saved duration', (tester) async {
+    final saved = Workout(id: 'w', date: DateTime(2025, 5, 1), durationSeconds: 1500,
+        exercises: const [Exercise(name: 'Row', sets: [])]);
+    tester.view.physicalSize = const Size(400, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(activeScreenHarness(const ActiveScreen(), repo, streak,
+        start: WorkoutEditStarted(saved)));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 3));
+    expect(find.text('Edit Workout'), findsOneWidget);
+    expect(find.text('25:00'), findsOneWidget, reason: 'not 25:03');
+    expect(find.text('Resume'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
   });
 
