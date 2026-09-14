@@ -1,0 +1,69 @@
+# FIXES — what changed, what was cut, what to overrule
+
+Base: `fcbda46` (origin/main after pull). Every commit below references its BUG-IDs; explanations live in the commit bodies and in `WALKTHROUGH.md`.
+
+## Corrections applied to the report before starting
+- **BUG-02 → Medium.** Kept the fix (validation at entry with `errorText`), relabelled.
+- **BUG-26 (Critical, new).** `WorkoutErrorState` carried the failed exercise list with no way to edit it, so *any* save failure was permanent. Fixed in Stage 1: `SetRemoved`/`ExerciseRemoved` + delete affordances, and the bloc returns to `InProgress` after an error so the mutation handlers accept the fix.
+- **GetWorkouts N+1 — verdict: not a bug at this volume.** 1 + N + N·M cheap local reads; at a solo user's ~200 workouts × 5 exercises that is ~1,200 queries per load, sub-100 ms on device. Becomes a bug past roughly **2,000 workouts** (≈12k queries, visible spinner). Comment left in `_hydrate`; revisit with a JOIN then.
+- **BUG-17 incomplete** — the back-gesture half is fixed with `PopScope`; the backgrounding/process-death half is closed by Feature A's write-through draft (see Stage 6).
+- `project_context.md` committed at the root and updated (§8 = corrections).
+
+## Stage 1 — stop data loss (`fa51372`, `943a3c8`)
+BUG-26, BUG-02, BUG-23 · BUG-12, BUG-05. Two commits, not four: the card/bloc changes share one widget; the two DB fixes share one file.
+
+## Stage 2 — schema changeable (`b7a325c`)
+BUG-04: `onUpgrade` ladder, `onDatabaseDowngradeDelete`. Version stayed 1 here; Stage 6 bumped it to 2.
+
+## Stage 3 — streak cluster (`aeff763`, `9b59f4c`, `6c385f7`)
+Refactor (clock injection, no behaviour change) · BUG-03, 07, 10, 18, 19, 22 (+ BUG-09 rename landed here — same edit) · BUG-08.
+**Behaviour changes:** a lapsed streak now reads 0 instead of the stale count; rest days reset on Monday (one transitional short/long week for existing users); "This week" is the calendar week, not the last 168 h; Mark Rest Day is hidden until a streak exists and on days already trained. Unilateral: `getStreak()` returning 0 for a lapsed streak — overrule if you want the stale count shown.
+21 datasource tests, injected clock. Pre-split installs fall back from `last_workout_date` when `last_streak_day` is absent — tested.
+
+## Stage 4 — what's shown (`9a584ee`, `5522c64`)
+BUG-06 · BUG-11 + BUG-14 · BUG-01 · BUG-09 rename.
+**Units:** storage is kg; conversion at parse and render only (`presentation/units.dart`). Existing rows treated as kg per decision 1 — no data migration, column comment documents it. `formatWeight` renders 1 decimal (0 for volumes); `100.0 kg` now reads `100 kg`.
+**Errors:** `LoadErrorView` with retry at all three sites; Home gained its missing `waiting` branch; `AppBlocObserver` + `FlutterError.onError` (chained, not replaced) are the first log sinks. `_onFinished` forwards to `addError`.
+
+## Stage 5 — Mediums/Lows (`9c3dc33`, `c7d8f82`)
+BUG-13, 15, 16, 17 (gesture half), 20, 24, 25.
+Deleted per decision 5: four orphaned widgets, `flutter_animate`, the JSON codec, `HistoryRequested`/`WorkoutHistoryState` (not wired — `push()` already creates a fresh History state, so dropping `UniqueKey` was the whole fix). `web/`, `windows/`, `linux/` removed; README narrowed. `sqflite_common_ffi` (dev) runs the real datasource against real SQLite.
+Formatters consolidated into `presentation/format.dart`; **90-minute workouts now render `1:30:00`** (were `90:00`). Phantom "Rest day" legend removed.
+
+**Deferred — BUG-21 (google_fonts runtime fetch).** Needs five font binaries plus either the exact `google_fonts` asset naming or an 11-file refactor away from the package. Offline claim holds from the second launch on. Est. 20 min; cut to protect the feature budget.
+
+## Stage 6 — features (`4ceac8c`, `9ff7dfa`)
+Picked A (persisted draft) and B (edit/delete) — reasoning in `FEATURE_PROPOSALS.md`.
+**A:** schema v2 (`status` column, first real `onUpgrade` step); draft = ordinary workout row; write-through on every mutation under `sequential()`; resume on `WorkoutStarted`; stopwatch seeded from `now − startedAt`; Home banner with Resume/Discard. **No `AppLifecycleState` hook** — `paused` does not fire on a kill; write-through is the only strategy that survives all three cases. Overrule if you wanted the lifecycle-hook exercise specifically.
+**B:** long-press in History → Edit (reopens `/active` in edit mode via route `extra`; Save calls `UpdateWorkout`, keeps date, no streak) or Delete (confirm; first real `ON DELETE CASCADE`).
+Behaviour change: leaving `/active` mid-session no longer prompts — the draft is already saved; only an unsaved *edit* asks.
+Tests: 5 datasource cases incl. **v1 → v2 migration on a hand-built v1 file**, 8 bloc cases with in-memory fakes (write-through, resume, finish, failure recovery, edit semantics).
+
+## Judgment calls you may want to overrule
+1. `getStreak()` → 0 when lapsed (Stage 3).
+2. Leaving `/active` with a draft is silent (Stage 6) — a snackbar "Saved as draft" would be a one-liner.
+3. History calls `DeleteWorkout` directly rather than via a bloc, matching its existing `GetWorkouts` read path. `HistoryBloc` is the named next refactor.
+4. `UpdateWorkout`/`DiscardDraft` exist as separate use cases despite sharing SQL with `SaveWorkout`/`DeleteWorkout` — policy boundary, argued in `WALKTHROUGH.md` §5.
+5. Weight display rounds to 1 decimal.
+
+## Found along the way (not in the report)
+- `main()` replaced `FlutterError.onError`, which breaks any test binding; now chains. Caught by the integration test.
+- Home optimistically rendered "2 rest days left" before load; now shows nothing until loaded.
+
+## Verification (executed, not asserted)
+- `flutter analyze` → `No issues found! (ran in 1.3s)`
+- `flutter test` → `+39: All tests passed!` (21 streak · 9 datasource on real SQLite via ffi, incl. v1→v2 migration · 8 WorkoutBloc · 1 placeholder)
+- `flutter test integration_test/app_flow_test.dart -d "iPhone 17 Pro"` (iOS 26.3 simulator) → `00:31 +1: All tests passed!`
+  Walked, from a **hand-seeded v1 database** so `_onUpgrade` ran on the real plugin: onboarding (empty name rejected; swipe disabled) → Home shows the migrated legacy workout, streak 0, no rest button → Begin → Add "Bench" → `0` reps rejected with visible `Must be > 0` → log 10×100 → rest sheet opens → close → **remove set** → log 8×60 → rest sheet → close → Finish → Save & Finish → Home: streak card, "Longest run", Mark Rest Day hidden (trained today, BUG-07) → Calendar (no phantom "Rest day" legend) → back → View all → History shows legacy (Jan 5) + new → long-press legacy → Delete → confirm → gone (**cascade on device**) → long-press new → Edit → "Edit Workout" screen with "Bench".
+- Not walked on device: Mark Rest Day (by design unreachable on a workout day; covered by 7 unit cases), draft resume across process kill (covered by bloc + datasource tests; the draft banner renders from the same `GetDraft` path).
+
+## Found by the device run (all fixed, `lib/` + integration test in one commit)
+1. **Onboarding pages 2/3 overflowed 49 px** while the keyboard from page 1 was still up — bare `Column`, no scroll. Yellow stripes mid page-slide: almost certainly the "animation bug" you mentioned. Now `SingleChildScrollView` + unfocus before `nextPage`.
+2. **Finish FAB covered the ✓ button** with the keyboard open (full-width `centerFloat` FAB floats up onto the entry row). Hidden while `viewInsets.bottom > 0`.
+3. **Rest-sheet Start button threw `BoxConstraints forces an infinite width`** — theme `minimumSize(double.infinity, 56)` inside a centered `Row`. In debug the sheet body never painted; this is the real cause behind the code's old "only the dark scrim painted" comment, which blamed a keyboard race. Bounded to 140×48.
+4. **Tapping a Home card never navigated to History** — the card's inner `InkWell` wins the gesture arena over the outer `GestureDetector`. Replaced with an explicit "View all" link.
+5. `_reload() => setState(() => _x = …)` returned the Future from the callback; framework assert. Block body in all three screens.
+6. `main()` replaced `FlutterError.onError`; now chains.
+
+## Spend
+Approximate, from token volume: Stage 1 $7 · Stage 2 $9 · Stage 3 $16 · Stage 4 $24 · Stage 5 $33 · Stage 6 $52 · Stage 7 (8 simulator runs) + docs ≈ $70. No checkpoint tripped.

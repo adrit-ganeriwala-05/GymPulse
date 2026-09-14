@@ -1,16 +1,16 @@
 # GymPulse — Project Context
 
-> Sole onboarding document for AI instances. Read this before touching code. It reflects the codebase as of commit `7518cbc` (local) / `fcbda46` (origin/main — local is 3 README-only commits behind; run `git pull` before starting work). No other code changes are pending upstream.
+> Sole onboarding document for AI instances. Read this before touching code. Reflects the codebase **after** the Phase 2 fix series and the two Phase 3 features (see `FIXES.md`, `WALKTHROUGH.md`). §8 lists what the original version of this document got wrong. Treat it as a map, not truth: verify against source.
 
 ---
 
 ## 1. Project Overview
 
-**GymPulse** is a single-user, offline-first mobile/desktop/web Flutter app for tracking gym workouts. It has no backend, no auth, no network calls — everything persists locally on-device via SQLite (`sqflite`) and `shared_preferences`.
+**GymPulse** is a single-user, offline-first Flutter app (Android, iOS, macOS) for tracking gym workouts. It has no backend, no auth, no network calls — everything persists locally on-device via SQLite (`sqflite`) and `shared_preferences`.
 
 Primary use case: a solo gym-goer opens the app, starts a workout session, adds exercises, logs sets (reps × weight) as they go, times their rest between sets, finishes the workout (which is saved to local SQLite), and tracks a daily workout **streak** with a limited weekly rest-day allowance. Secondary flows: browsing workout history, viewing a monthly calendar of workout days, and toggling the displayed weight unit (kg/lbs).
 
-There is no multi-user support, no cloud sync, no export, and no editing/deleting of past workouts.
+There is no multi-user support, no cloud sync, and no export. Past workouts **can** be edited and deleted (long-press in History). An in-progress workout is persisted as a **draft** on every mutation and resumed on the next visit to `/active`.
 
 ---
 
@@ -32,16 +32,18 @@ There is no multi-user support, no cloud sync, no export, and no editing/deletin
 | `shared_preferences` | ^2.2.2 | 2.5.5 | Key-value persistence (settings, streak, onboarding flag) |
 | `uuid` | ^4.3.3 | 4.5.3 | Generates workout/exercise/set IDs (v4) |
 | `table_calendar` | ^3.0.9 | 3.2.0 | Month-view calendar widget |
-| `flutter_animate` | ^4.5.0 | 4.5.2 | **Declared but currently unused** — no `.animate()` calls anywhere in `lib/` |
+| `bloc_concurrency` | ^0.2.5 | 0.2.5 | `sequential()` transformer for read-modify-write handlers |
 | `google_fonts` | ^6.1.0 | 6.3.3 | Playfair Display + DM Sans typography |
 | `sqflite` | ^2.3.2 | 2.4.2+1 | Local SQLite database for workout history |
 | `path` | ^1.9.0 | 1.9.1 | Joins DB file path (`sqflite` helper) |
 
 **Dev dependencies**
 - `flutter_test` (SDK)
-- `flutter_lints` ^6.0.0 (resolved 6.0.0) — `analysis_options.yaml` just includes `package:flutter_lints/flutter.yaml` with no rule overrides. `flutter analyze` currently reports **zero issues**.
+- `flutter_lints` ^6.0.0 — default rules. `flutter analyze` reports **zero issues**.
+- `sqflite_common_ffi` — runs the real datasource against real SQLite in unit tests.
+- `integration_test` (SDK) — `integration_test/app_flow_test.dart` drives the full flow on a simulator from a seeded v1 database.
 
-**Platforms configured**: Android, iOS, macOS, Web, Windows, Linux (all platform folders present and scaffolded by `flutter create`; no platform-specific native code has been added beyond defaults).
+**Platforms**: Android, iOS, macOS. `web/`, `windows/`, `linux/` were removed — sqflite has no implementation there.
 
 **No backend, no HTTP client, no state persistence library beyond the two above.** No CI/CD config exists in the `gympulse/` project itself.
 
@@ -67,8 +69,9 @@ gympulse/
 │   ├── main.dart                          # entrypoint, DI init, MaterialApp.router + full custom theme
 │   ├── injection_container.dart           # get_it registrations (the composition root)
 │   ├── domain/
+│   │   ├── streak_rules.dart               # kRestDaysPerWeek, civilDate, civilDaysBetween, startOfWeek (pure Dart)
 │   │   ├── entities/
-│   │   │   ├── exercise.dart              # Exercise, ExerciseSet (plain, non-Equatable)
+│   │   │   ├── exercise.dart              # Exercise, ExerciseSet (weight is ALWAYS kg)
 │   │   │   └── workout.dart                # Workout
 │   │   ├── repositories/                   # abstract interfaces only
 │   │   │   ├── settings_repository.dart
@@ -79,22 +82,28 @@ gympulse/
 │   │       ├── get_weight_unit.dart
 │   │       ├── get_workouts.dart
 │   │       ├── save_weight_unit.dart
-│   │       ├── save_workout.dart
+│   │       ├── save_workout.dart           # new or finalised draft (caller bumps streak)
+│   │       ├── update_workout.dart         # in-place edit (no streak side-effect)
+│   │       ├── save_draft.dart / get_draft.dart / discard_draft.dart
+│   │       ├── delete_workout.dart
 │   │       └── update_streak.dart
 │   ├── data/
 │   │   ├── datasources/
-│   │   │   ├── workout_database.dart       # sqflite singleton, schema DDL
-│   │   │   ├── workout_local_datasource.dart   # CRUD against sqflite
-│   │   │   └── streak_local_datasource.dart    # streak/rest-day logic, SharedPreferences-backed
+│   │   │   ├── workout_database.dart       # single-flight open, onConfigure FK pragma, v2 schema + onUpgrade ladder
+│   │   │   ├── workout_local_datasource.dart   # upsertWorkout(status), getWorkouts (done), getDraft, deleteWorkout
+│   │   │   └── streak_local_datasource.dart    # injectable clock; civil-date streak logic
 │   │   ├── models/
-│   │   │   ├── exercise_model.dart         # ExerciseModel/ExerciseSetModel extend domain entities
-│   │   │   └── workout_model.dart          # WorkoutModel extends Workout; unused JSON codec (see §7)
+│   │   │   ├── exercise_model.dart         # fromEntity only (JSON codec deleted)
+│   │   │   └── workout_model.dart
 │   │   └── repositories/                   # implement domain interfaces, delegate to datasources
 │   │       ├── settings_repository_impl.dart
 │   │       ├── streak_repository_impl.dart
 │   │       └── workout_repository_impl.dart
 │   └── presentation/
-│       ├── router.dart                     # GoRouter config, per-route BlocProviders, auth-style redirect guard
+│       ├── app_bloc_observer.dart          # logs bloc errors via dart:developer
+│       ├── format.dart                     # formatDuration (h:mm:ss), formatDayMonth
+│       ├── units.dart                      # kg <-> display unit conversion at the render/parse boundary
+│       ├── router.dart                     # GoRouter config; /active reads `extra` as a Workout to edit
 │       ├── blocs/
 │       │   ├── workout/                    # active session state machine
 │       │   ├── workout_timer/              # elapsed-time stopwatch
@@ -109,17 +118,17 @@ gympulse/
 │       │   └── calendar_screen.dart
 │       └── widgets/
 │           ├── circular_timer.dart         # CustomPainter arc gauge — used by both timers
-│           ├── exercise_log_card.dart      # used on ActiveScreen
-│           ├── workout_summary_card.dart   # used on HomeScreen + HistoryScreen
-│           ├── exercise_card.dart          # ⚠ dead code — no imports anywhere
-│           ├── streak_badge.dart           # ⚠ dead code — no imports anywhere, off-brand dark palette
-│           └── streak_card.dart            # ⚠ dead code — no imports anywhere
-│           └── timer_display.dart          # ⚠ dead code — no imports anywhere
+│           ├── exercise_log_card.dart      # log/remove sets, remove exercise, validated input
+│           ├── load_error_view.dart        # FutureBuilder error branch with retry
+│           └── workout_summary_card.dart   # used on HomeScreen + HistoryScreen
 ├── test/
-│   └── widget_test.dart                    # placeholder only, asserts `true`
+│   ├── data/datasources/streak_local_datasource_test.dart   # 21 cases, injected clock
+│   ├── data/datasources/workout_local_datasource_test.dart  # real SQLite via ffi, incl. v1→v2 migration
+│   └── presentation/blocs/workout_bloc_test.dart            # draft / resume / finish / edit / failure
+├── integration_test/app_flow_test.dart     # on-device core flow from a seeded v1 DB
 ├── pubspec.yaml / pubspec.lock
 ├── analysis_options.yaml                   # default flutter_lints, no custom rules
-└── android/ ios/ macos/ web/ windows/ linux/   # standard flutter create scaffolds, unmodified
+└── android/ ios/ macos/                    # standard flutter create scaffolds, unmodified
 ```
 
 ### 3.3 Data Flow & State Management
@@ -209,15 +218,14 @@ None of these implement `Equatable` or `copyWith` — they are plain immutable v
 
 ### 5.3 SQLite Schema (`data/datasources/workout_database.dart`)
 
-Database file: `gympulse.db` (via `getDatabasesPath()`), version `1`, no migrations defined yet.
+Database file: `gympulse.db`, **version 2**. `PRAGMA foreign_keys = ON` is set in `onConfigure` (the only hook where it takes effect — it is a no-op inside the create/upgrade transaction). `onUpgrade` is an `if (oldVersion < N)` ladder; `onDowngrade` deletes.
 
 ```sql
-PRAGMA foreign_keys = ON;
-
 CREATE TABLE workouts (
   id TEXT PRIMARY KEY,
-  date TEXT NOT NULL,                 -- ISO8601 string
-  duration_seconds INTEGER NOT NULL DEFAULT 0
+  date TEXT NOT NULL,                 -- ISO8601 local, = session START time
+  duration_seconds INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'done' -- 'done' | 'draft'  (v2)
 );
 
 CREATE TABLE exercises (
@@ -232,12 +240,12 @@ CREATE TABLE sets (
   id TEXT PRIMARY KEY,                -- UUID v4, generated per-set at save time
   exercise_id TEXT NOT NULL,
   reps INTEGER NOT NULL,
-  weight REAL NOT NULL,
+  weight REAL NOT NULL,               -- kilograms, always
   position INTEGER NOT NULL DEFAULT 0,
   FOREIGN KEY (exercise_id) REFERENCES exercises(id) ON DELETE CASCADE
 );
 ```
-`position` columns preserve insertion order on read (`ORDER BY position ASC`) since SQLite doesn't guarantee row order otherwise. Cascading deletes are configured but **nothing in the app ever deletes a workout**, so the cascade is currently unexercised.
+`position` columns preserve insertion order on read. Cascades fire on `deleteWorkout` and on every `upsertWorkout` (`INSERT OR REPLACE` on the parent row deletes children via FK, then they are reinserted). A draft is an ordinary row with `status='draft'`; `getWorkouts` filters `status='done'`.
 
 ### 5.4 SharedPreferences Keys (no schema, just documented keys)
 
@@ -247,9 +255,10 @@ CREATE TABLE sets (
 | `user_name` | String | `OnboardingScreen` | Displayed in Home greeting |
 | `weight_unit` | String (`'kg'`\|`'lbs'`) | `SettingsRepositoryImpl` | Display unit everywhere |
 | `streak_count` | int | `StreakLocalDatasourceImpl` | Current consecutive-day streak |
-| `last_workout_date` | String (ISO date, day-truncated) | `StreakLocalDatasourceImpl` | Last day counted toward the streak (workout **or** rest day) |
-| `rest_days_remaining` | int | `StreakLocalDatasourceImpl` | Remaining rest-day tokens in the current 7-day window |
-| `week_start_date` | String (ISO date) | `StreakLocalDatasourceImpl` | Anchor for the rolling 7-day rest-day allowance |
+| `last_workout_date` | String (ISO date, day-truncated) | `StreakLocalDatasourceImpl` | Last day a **workout** was logged (never written by a rest day) |
+| `last_streak_day` | String (ISO date) | `StreakLocalDatasourceImpl` | Last day the streak was kept (workout **or** rest). Falls back to `last_workout_date` for pre-split installs |
+| `rest_days_remaining` | int | `StreakLocalDatasourceImpl` | Remaining tokens in the current ISO week |
+| `week_start_date` | String (ISO date) | `StreakLocalDatasourceImpl` | Monday of the current ISO week |
 | `last_rest_day_date` | String (ISO date) | `StreakLocalDatasourceImpl` | Prevents marking more than one rest day per calendar day |
 
 ---
@@ -273,11 +282,7 @@ Single `init()` function, awaited before `runApp`. Registration order matters (e
 - Custom `errorBuilder` renders a themed 404 page with a "Go Home" button rather than the default Flutter error screen.
 
 ### 6.3 Streak & Rest-Day Algorithm (`StreakLocalDatasourceImpl`)
-This is the most subtle business logic in the app, entirely in `data/datasources/streak_local_datasource.dart`:
-- **`updateStreak()`** (called after every finished workout): compares `today` to `last_workout_date`. Same day → no-op (multiple workouts/day don't double-count). Exactly 1 day gap → increment streak. Any gap `>1` day → reset streak to `1`. No prior date → initialize streak to `1`. Always calls `_initWeekIfNeeded()` afterward.
-- **`_initWeekIfNeeded()`**: if no `week_start_date` is stored, or the current week has run ≥7 days since its start, (re)anchors `week_start_date = today` and resets `rest_days_remaining = 2`. This is a **rolling 7-day window anchored to whenever the user first opens the app in a new cycle**, not a calendar week (not Mon-Sun) — it only advances when `getRestDaysRemaining()` or `updateStreak()` is called, i.e. lazily on next use, not via a background job.
-- **`markRestDay()`**: guards against (a) marking a day outside the currently tracked 7-day window (defensive check against a stale window), and (b) marking the same calendar day twice (`last_rest_day_date` check). If `rest_days_remaining > 0`, decrements it, records `last_rest_day_date`, **and also bumps `last_workout_date` to today** — meaning a rest day counts as a "covered" day for streak-continuity purposes (prevents the streak from breaking) without incrementing the streak counter itself.
-- Two rest days are allotted per rolling week; there is no UI to configure this limit — it's a hardcoded `2` default in three places (`getRestDaysRemaining` fallback, `_initWeekIfNeeded`).
+Semantics are documented on the class. Summary: a streak is consecutive civil days each of which is a workout or a marked rest day; it increments once per *training* day; rest days bridge without incrementing; a lapse > 1 day reads as 0. Rest allowance is `kRestDaysPerWeek` per ISO Monday week. All day math goes through `domain/streak_rules.dart` (`civilDaysBetween` projects onto UTC — DST-safe). `markRestDay` refuses when there is no live streak, when a workout was already logged today, or when a rest was already marked today; it writes its same-day guard *before* decrementing. `StreakBloc` runs `StreakUpdated`/`RestDayMarked` under `sequential()`. The clock is injected (`clock:`), which is how the 21-case test suite exists.
 
 ### 6.4 Timer BLoCs
 Both `WorkoutTimerBloc` and `RestTimerBloc` use `Stream.periodic(Duration(seconds: 1))` piped back into `add()` (self-feeding event loop) rather than a raw `Timer.periodic` mutating state directly — keeps all state transitions inside BLoC's `on<Event>` handlers. Both cancel their `StreamSubscription` on `close()` to avoid leaking ticks into a disposed BLoC. `RestTimerBloc` additionally tracks `totalDuration` separately from the ticking `seconds` remaining, so a paused-then-resumed timer's circular progress ring keeps the original denominator instead of resetting to the resumed remaining time.
@@ -292,39 +297,23 @@ All theme data is defined inline as one large `ThemeData` literal in `main.dart`
 
 ## 7. Current Project State
 
-### 7.1 Fully functional / production-ready
-- Onboarding flow with persisted completion flag and router-level enforcement.
-- DI graph, app boot sequence, theming.
-- Full active-workout flow: start timer, add exercises (with dedupe), log sets, auto-prompted rest timer with two documented layout-bug workarounds, finish-with-confirmation, error handling on save failure (`WorkoutErrorState` + `SnackBar`, doesn't crash).
-- SQLite persistence of finished workouts (transactional, FK-cascading schema) and retrieval, newest-first.
-- Streak + rolling weekly rest-day tracking (`SharedPreferences`-backed), including edge cases for same-day double-workouts, day gaps, and week-boundary rollover.
-- Weight unit toggle, persisted and reflected consistently across Home/Active/History/Calendar.
-- History list, Calendar month view with per-day workout detail sheet.
-- `flutter analyze` is clean (zero issues) against `flutter_lints` defaults.
-- Git repo is real (`github.com/adrit-ganeriwala-05/GymPulse`), 4 commits total; local checkout is 3 commits behind `origin/main` (all three are README wording/typo fixes only, no code drift) — safe to `git pull` before further work.
+### 7.1 Working and tested
+- Everything in §4, plus draft persistence/resume, edit and delete. 39 unit/bloc tests + 1 on-device integration test; `flutter analyze` clean.
+- Save failures are recoverable (remove the offending set/exercise, retry). Load failures render `LoadErrorView`, never the empty state. Bloc errors are logged via `AppBlocObserver`.
 
-### 7.2 Partially implemented / dead code / inconsistencies
-- **Four orphaned widgets, never imported anywhere**: `exercise_card.dart`, `streak_badge.dart`, `streak_card.dart`, `timer_display.dart`. `StreakBadge`/`StreakCard` even use a different, older dark navy/red color palette (`0xFF16213E`/`0xFFE94560`) inconsistent with the current warm brown/cream theme — clear leftovers from an earlier design iteration, superseded by the inline streak card built directly into `HomeScreen`. Safe to delete, or worth asking the user before wiring back in.
-- **Dead JSON (de)serialization**: `WorkoutModel`/`ExerciseModel`/`ExerciseSetModel`'s `fromJson`/`toJson` are never called anywhere; the real sqflite datasource builds/reads raw `Map<String, Object?>` column maps directly. Likely a remnant of an earlier `shared_preferences`+JSON persistence design that was replaced by sqflite without removing the old codec.
-- **Duplicate/competing "streak" concepts**: `HomeScreen`'s "Best Streak" stat tile is computed client-side from the raw workout list (longest run of consecutive calendar days with ≥1 workout) and is **independent of** `StreakBloc.currentStreak` (which is persisted, increments on rest days too via `last_workout_date`, and is what the streak card actually displays). A future change to one will not automatically stay consistent with the other — worth unifying or clearly renaming to avoid confusion (e.g. "Best Streak" vs. "Current Streak" don't currently share a definition of "streak").
-- **`WorkoutBloc.HistoryRequested`/`WorkoutHistoryState` are unused** — no screen ever dispatches `HistoryRequested()`. `HistoryScreen`, `HomeScreen`, and `CalendarScreen` all bypass the BLoC and call `sl<GetWorkouts>()` directly. This is a dead code path inside an otherwise-used BLoC, and a real duplication of "how do I fetch workouts" across three screens.
-- **Calendar legend implies rest days are marked on the grid**, but `_CalendarView`'s `markerBuilder` only checks `workoutsByDay` — there is no rest-day marker rendered anywhere on the calendar despite the legend showing a "Rest day" dot.
-- **No workout editing or deletion** exists anywhere in the UI or data layer (no `deleteWorkout`/`updateWorkout` methods on `WorkoutRepository` at all). The `ON DELETE CASCADE` FKs are defined but unexercised. If this is added later, note the `saveWorkout` insert uses `ConflictAlgorithm.replace` keyed on the *workout* row's `id` only — replacing a workout row would **not** clear its old child `exercises`/`sets` rows first, so naively reusing `saveWorkout` for "edit" would leave orphaned/duplicate child rows. A real edit feature needs an explicit delete-children-then-reinsert (or a dedicated update path).
-- **`getWorkouts()` has an N+1 query pattern**: one query for all workouts, then one query per workout for its exercises, then one query per exercise for its sets. Fine at hobbyist data volumes; will need batching/joins if workout history grows large.
-- **`flutter_animate` is an unused dependency** — declared in `pubspec.yaml`, never imported. Either remove it or it's earmarked for animation work not yet started.
-- **No real test coverage**: `test/widget_test.dart` is the unmodified `flutter create` placeholder (`expect(true, isTrue)`). No unit tests exist for the streak algorithm (the most bug-prone logic in the app), no BLoC tests, no widget tests for any of the five screens.
-- **Silent failure fallback pattern**: `HomeScreen`, `HistoryScreen`, and `CalendarScreen` all do `snapshot.data ?? []` in their `FutureBuilder`s — a `GetWorkouts()` failure (e.g., a corrupted DB file) renders identically to "no workouts yet" with no error surfaced to the user, and no logging.
-- **Timers do not survive navigation or backgrounding**: both `WorkoutTimerBloc` and `RestTimerBloc` live only as long as their screen's BLoC instance; backgrounding the app or navigating away and back resets them (there is no persisted "workout in progress" draft state — closing `/active` and reopening it always starts a fresh, empty `WorkoutBloc`).
+### 7.2 Known gaps / next steps
+- **BUG-21 deferred**: `google_fonts` fetches over HTTP on cold first launch; fonts are not bundled.
+- **BUG-09 partially addressed**: Home's "Longest run" tile counts workout-day runs and cannot see rest days; the streak card can. Reconciliation needs rest days as queryable rows.
+- History, Home and Calendar each call `GetWorkouts` directly via `FutureBuilder`; History calls `DeleteWorkout` directly. A shared `HistoryBloc` is the next refactor.
+- `getWorkouts` is N+1 by design; revisit past ~2000 workouts.
+- No `CHECK` constraints on `sets` (needs a table rebuild → v3).
+- Rest-timer sheet keeps its two documented `!_debugDoingThisLayout` workarounds; re-verify if you change how it opens/closes.
 
-### 7.3 Known bugs / risk areas to watch
-- The two documented `!_debugDoingThisLayout` workarounds in `active_screen.dart` (`_showRestTimerSheet`'s post-frame-callback deferral, and the rest-timer-finished `Navigator.pop()` deferral) indicate this is a real, previously-hit Flutter timing bug in this exact flow — if you refactor how/when the rest-timer sheet opens or closes, re-verify these races don't reappear (test specifically: logging a set immediately after the keyboard was focused, and letting the rest timer run out naturally while the sheet is open).
-- `_initWeekIfNeeded()`'s "rolling week" only advances lazily, the next time `getRestDaysRemaining()` or `updateStreak()` runs — if a user doesn't open the app for several weeks, the very next open will correctly reset to a fresh 2-rest-day window anchored to "today" (verified by the `>=7` check), but there's no historical record of skipped weeks; this is expected/acceptable for a purely local rest-day allowance, just don't assume `week_start_date` reflects continuous usage.
-- `HomeScreen._formatDate`/`_CalendarViewState._formatDetailDate`/`WorkoutSummaryCard._formatDate` each hand-roll their own day/month name arrays and `weekday`/`month` index math independently (three near-duplicate implementations) — a good target for extraction into a shared date-formatting utility if you touch any of them.
-
-### 7.4 Obvious next steps (not started)
-- Decide fate of the four dead widgets and the dead JSON codec (delete or integrate).
-- Add a real settings screen if more preferences are ever needed (currently weight-unit-only, buried in `ActiveScreen`).
-- Add workout edit/delete.
-- Add rest-day markers to the calendar grid to match the legend, or remove the misleading legend entry.
-- Add unit tests around `StreakLocalDatasourceImpl` given its date-math complexity.
-- Reconcile the "Best Streak" vs. "Current Streak" definitions on `HomeScreen`.
+## 8. Corrections to the original version of this document
+- Claimed the redirect guard might capture a stale onboarding flag — it reads live from prefs on every navigation. Not a bug.
+- Claimed `PRAGMA foreign_keys` was only in `onCreate` — it was in two places; the `onCreate` copy was a silent no-op (inside a transaction), the post-open copy worked by accident. Now in `onConfigure`.
+- Claimed `didChangeDependencies` refired on keyboard/MediaQuery changes — Home only subscribed to `Theme`. The real defect was a duplicate `StreakLoaded` dispatch (router + screen).
+- Said `ConflictAlgorithm.replace` would orphan/duplicate children on re-save — with FKs ON it cascades cleanly; that path is now used deliberately for drafts and edits.
+- Listed the streak edge cases as handled — DST spring-forward broke it (23h between local midnights → `inDays == 0`), and `last_workout_date` was overloaded to mean two things.
+- Listed Web/Windows/Linux as supported — sqflite had no implementation there.
+- Did not mention that `WorkoutErrorState` made any save failure permanent (BUG-26) or that the `database` getter could open the DB twice (BUG-12).

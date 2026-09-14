@@ -2063,3 +2063,32 @@ Nothing here is recalled from memory about how a package "usually" behaves.
 
 **No code has been modified.** `git status` shows only the pre-existing `README.md` modification,
 plus this new file.
+
+
+---
+
+## 7. Status delta (post-fix — do not re-read §2 as current)
+
+| ID | Status | Commit / note |
+|---|---|---|
+| BUG-01 | Fixed | `5522c64` canonical kg, convert at boundary; existing rows = kg |
+| BUG-02 | Fixed — **relabelled Medium** | `fa51372` |
+| BUG-03 | Fixed | `9b59f4c` civil-date arithmetic, 21 tests incl. DST pair |
+| BUG-04 | Fixed | `b7a325c` ladder; v2 step in `4ceac8c` |
+| BUG-05 | Fixed | `943a3c8` onConfigure; verified by FK test |
+| BUG-06 | Fixed | `9a584ee` startedAt |
+| BUG-07, 10 | Fixed | `9b59f4c` key split |
+| BUG-08 | Fixed | `6c385f7` sequential() |
+| BUG-09 | Partial (decision 2) | renamed "Longest run"; DST fixed; reconciliation deferred |
+| BUG-11, 14 | Fixed | `5522c64` |
+| BUG-12 | Fixed | `943a3c8`; verified by single-flight test |
+| BUG-13, 15, 16, 25 | Fixed | `c7d8f82` |
+| BUG-17 | Fixed (both halves) | PopScope `c7d8f82`; backgrounding/kill via draft write-through `4ceac8c` |
+| BUG-18, 19, 22 | Fixed | `9b59f4c` ISO week, `kRestDaysPerWeek` |
+| BUG-20 | Fixed | `9c3dc33` platforms narrowed; ffi dev dep |
+| BUG-21 | **Deferred** | fonts not bundled — see FIXES.md |
+| BUG-23 | Fixed | `fa51372` |
+| BUG-24 | Fixed | deletions per decision 5; formatters consolidated; `mm:ss` → `h:mm:ss` |
+| BUG-26 (new, Critical) | Fixed | `fa51372` SetRemoved/ExerciseRemoved + error-state recovery |
+| N+1 read | Verdict: not a bug | becomes one past ~2000 workouts; see FIXES.md |
+| Device-found (6) | Fixed | onboarding overflow, FAB over entry row, rest-sheet infinite width, Home card tap, setState arrow, onError chain — FIXES.md |
