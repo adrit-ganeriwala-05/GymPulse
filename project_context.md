@@ -79,7 +79,7 @@ gympulse/
 │   │   │   ├── streak_repository.dart
 │   │   │   └── workout_repository.dart
 │   │   └── usecases/                       # thin call-wrappers, one class per operation
-│   │       ├── get_streak.dart             # returns a Dart record (int, int)
+│   │       ├── get_streak.dart             # returns a Dart record (streak, restDays, canRestToday)
 │   │       ├── get_weight_unit.dart
 │   │       ├── get_workouts.dart
 │   │       ├── save_weight_unit.dart
@@ -90,7 +90,7 @@ gympulse/
 │   │       └── update_streak.dart
 │   ├── data/
 │   │   ├── datasources/
-│   │   │   ├── workout_database.dart       # single-flight open, onConfigure FK pragma, v2 schema + onUpgrade ladder
+│   │   │   ├── workout_database.dart       # single-flight open, onConfigure FK pragma, v3 schema + onUpgrade ladder
 │   │   │   ├── workout_local_datasource.dart   # upsertWorkout(status), getWorkouts (done), getDraft, deleteWorkout
 │   │   │   └── streak_local_datasource.dart    # injectable clock; civil-date streak logic
 │   │   ├── models/
@@ -124,7 +124,7 @@ gympulse/
 │           └── workout_summary_card.dart   # used on HomeScreen + HistoryScreen
 ├── test/
 │   ├── helpers/fakes.dart                   # in-memory repos, get_it registration, screen harnesses
-│   ├── data/datasources/…                   # streak (23, injected clock) · workout on real SQLite via ffi (12, incl. v1→v3)
+│   ├── data/datasources/…                   # streak (29, injected clock) · workout on real SQLite via ffi (13, incl. v1→v3 and v2→v3)
 │   ├── data/repositories/…                  # status/paused policy, entity→model mapping
 │   ├── domain/workout_stats_test.dart       # aggregates: boundaries, DST, same-day, volume
 │   ├── presentation/blocs/…                 # WorkoutBloc, WorkoutTimerBloc, RestTimerBloc (fakeAsync)
@@ -139,11 +139,11 @@ gympulse/
 ### 3.3 Data Flow & State Management
 
 - **Global/DI state**: `get_it` (`sl`) holds true singletons — the `SharedPreferences` instance, both repositories, both datasources, and all six use cases. These are constructed once in `init()` (`main.dart` awaits this before `runApp`).
-- **Screen-scoped state**: BLoCs are registered as `registerFactory` in DI (a **new instance per resolution**), and each `GoRoute` builder wraps its screen in a `MultiBlocProvider` that resolves fresh BLoC instances and immediately dispatches a "load" event (e.g. `StreakLoaded()`, `WorkoutStarted()`). This means BLoC state does **not** survive navigating away and back — e.g. leaving `/active` and returning starts a brand-new `WorkoutBloc` with empty state (there is no draft/resume-workout feature).
+- **Screen-scoped state**: BLoCs are registered as `registerFactory` in DI (a **new instance per resolution**), and each `GoRoute` builder wraps its screen in a `MultiBlocProvider` that resolves fresh BLoC instances and immediately dispatches a "load" event (e.g. `StreakLoaded()`, `WorkoutStarted()`). This means BLoC state does **not** survive navigating away and back — leaving `/active` and returning starts a brand-new `WorkoutBloc`, which resumes the persisted draft (`WorkoutStarted` → `GetDraft`).
 - **Local ephemeral state**: individual screens/widgets use plain `StatefulWidget` + `setState` for form/UI-only concerns (onboarding page index, add-exercise form toggle, card expand/collapse, rest-timer duration picker). This is intentional — it's not business state.
 - **Persistence flow** for a completed workout:
   `ActiveScreen (_FinishButton)` → `WorkoutBloc.add(WorkoutFinished)` → builds a `Workout` entity with a fresh UUID → `SaveWorkout` usecase → `WorkoutRepositoryImpl` → wraps in `WorkoutModel.fromEntity` → `WorkoutLocalDatasourceImpl.saveWorkout` → single `sqflite` transaction inserting into `workouts`, `exercises`, `sets` tables → on success also calls `UpdateStreak` usecase → `StreakRepositoryImpl` → `StreakLocalDatasourceImpl` (SharedPreferences) → emits `WorkoutCompleteState` → listener navigates to `/`.
-- **Reads**: `HomeScreen`, `HistoryScreen`, and `CalendarScreen` each independently call `sl<GetWorkouts>()` directly inside `initState`/`didChangeDependencies` and render via `FutureBuilder` — they do **not** go through `WorkoutBloc` (even though `WorkoutBloc` has a `HistoryRequested` event / `WorkoutHistoryState` that is never dispatched from any screen — see §7). This is a duplication of read paths, not a shared single source of truth.
+- **Reads**: `HomeScreen`, `HistoryScreen`, and `CalendarScreen` each independently call `sl<GetWorkouts>()` directly inside `initState`/`didChangeDependencies` and render via `FutureBuilder` — they do **not** go through `WorkoutBloc`. This is a duplication of read paths, not a shared single source of truth (`HistoryBloc` is the named next refactor).
 - Weight unit is read in two different ways across the app: reactively via `BlocBuilder<SettingsBloc, SettingsState>` (on `ActiveScreen`) and synchronously/non-reactively via `sl<SharedPreferences>().getString('weight_unit')` (on `HomeScreen`, `HistoryScreen`, `CalendarScreen`'s detail sheet). Both read the same underlying pref key so they stay consistent, but only the `SettingsBloc`-driven UI updates live without a rebuild trigger.
 
 ---
@@ -158,8 +158,8 @@ gympulse/
 
 ### 4.2 Home (`home_screen.dart`)
 - Greeting: `"Welcome, {name} 👋"` (name pulled from prefs in `initState`) + formatted current date.
-- Streak card (`BlocBuilder<StreakBloc>`, loaded via `StreakLoaded()` in `didChangeDependencies`): shows fire emoji + `currentStreak`, rest-days-remaining, a weekly progress bar (`thisWeek / 5` clamped), and a "Mark Rest Day (N left)" button (only shown while `restDays > 0`) that dispatches `RestDayMarked()`.
-- Three stat tiles computed **client-side** from the full workout list each build: `thisMonth` (count in current calendar month/year), `thisWeek` (rolling 7-day window, `diff < 7`, not calendar-week-aligned), and `bestStreak` (recomputed by scanning sorted workout dates for the longest run of consecutive days — **independent of** the persisted `StreakBloc` streak counter; see §7 for the discrepancy this creates).
+- Streak card (`BlocBuilder<StreakBloc>`, `StreakLoaded()` dispatched by the route's provider): shows fire emoji + `currentStreak`, rest-days-remaining, a weekly progress bar (`thisWeek / kTrainingDaysPerWeek` clamped), and a "Mark Rest Day (N left)" button shown iff `StreakLoadedState.canRestToday` — the datasource's own guard, so the button never offers a tap it would refuse (A2-02).
+- Three stat tiles computed from the workout list via `domain/workout_stats.dart`: `countThisMonth`, `countThisWeek` (distinct training days in the ISO Monday week), and `longestRun` (longest run of consecutive workout days — cannot see rest days, hence the tile is "Longest run", not "streak"; see §7.2).
 - "Begin Workout 💪" CTA → `context.go('/active')`.
 - "Recent Activity": shows every workout logged on the single most-recent workout day (not full history), tapping any card routes to `/history`.
 - Calendar icon in the AppBar → `/calendar`.
@@ -176,7 +176,7 @@ This is the most complex screen, composed of three cooperating BLoCs (`WorkoutBl
 - **Finish Workout**: floating button → two-step confirm (`Keep Going` / `Save & Finish`) rendered by swapping the FAB's content in place. Guards: blocks finishing with zero exercises (`SnackBar`, does not reach the confirm step); warns (but does not block) if the workout timer was never started, noting duration will record as 0:00. On confirm, stops the timer, reads its elapsed seconds, dispatches `WorkoutFinished(durationSeconds: ...)`. A `BlocListener<WorkoutBloc>` navigates to `/` on `WorkoutCompleteState` or shows an error `SnackBar` (and un-confirms) on `WorkoutErrorState`.
 
 ### 4.4 History (`history_screen.dart`)
-- One-shot `FutureBuilder` over `GetWorkouts()`, fetched once in `initState`. The router gives this route a `UniqueKey()` on every navigation (`router.dart`), so navigating to `/history` always remounts the screen and refetches — but there is no pull-to-refresh or reactive update if data changes while the screen is alive.
+- One-shot `FutureBuilder` over `GetWorkouts()`, fetched once in `initState`; `_reload()` after a delete. `/history` is `push`ed, so each visit is a fresh State. No pull-to-refresh.
 - Empty state: emoji + "No workouts yet" + CTA to `/active`.
 - Populated state: `ListView.builder` of `WorkoutSummaryCard`s. Data source (`WorkoutLocalDatasourceImpl.getWorkouts`) already returns rows `ORDER BY date DESC`, so the screen renders them as-is (comment in code explicitly warns against reversing).
 
@@ -219,7 +219,7 @@ class Workout {
 None of these implement `Equatable` or `copyWith` — they are plain immutable value holders, always fully reconstructed rather than patched.
 
 ### 5.2 Data Models (`data/models/`)
-`WorkoutModel extends Workout`, `ExerciseModel extends Exercise`, `ExerciseSetModel extends ExerciseSet` — each adds a covariant typed list (`exerciseModels` / `modelSets`) plus `fromJson`/`toJson`/`fromEntity` factories. **The JSON codec is currently dead code** — nothing in the app serializes to/reads from JSON; persistence goes through raw `sqflite` column maps instead (see §7).
+`WorkoutModel extends Workout`, `ExerciseModel extends Exercise`, `ExerciseSetModel extends ExerciseSet` — each adds a covariant typed list (`exerciseModels` / `modelSets`) plus a `fromEntity` factory. Persistence goes through raw `sqflite` column maps; the JSON codec was deleted.
 
 ### 5.3 SQLite Schema (`data/datasources/workout_database.dart`)
 
@@ -277,7 +277,7 @@ Single `init()` function, awaited before `runApp`. Registration order matters (e
 2. `WorkoutLocalDatasource` → **lazy** singleton (sqflite-backed impl).
 3. `StreakLocalDatasource` → singleton (constructed eagerly, needs prefs).
 4. Three repositories → singletons, each taking its datasource.
-5. Six use cases → singletons, each taking its repository.
+5. Thirteen use cases → singletons, each taking its repository.
 6. Five BLoCs → **factories** (fresh instance every `sl<XBloc>()` call), each taking its use case(s).
 
 ### 6.2 Routing & Guards (`presentation/router.dart`)
@@ -287,7 +287,7 @@ Single `init()` function, awaited before `runApp`. Registration order matters (e
 - Custom `errorBuilder` renders a themed 404 page with a "Go Home" button rather than the default Flutter error screen.
 
 ### 6.3 Streak & Rest-Day Algorithm (`StreakLocalDatasourceImpl`)
-Semantics are documented on the class. Summary: a streak is consecutive civil days each of which is a workout or a marked rest day; it increments once per *training* day; rest days bridge without incrementing; a lapse > 1 day reads as 0. Rest allowance is `kRestDaysPerWeek` per ISO Monday week. All day math goes through `domain/streak_rules.dart` (`civilDaysBetween` projects onto UTC — DST-safe). `markRestDay` refuses when there is no live streak, when a workout was already logged today, or when a rest was already marked today; it writes its same-day guard *before* decrementing. `StreakBloc` runs `StreakUpdated`/`RestDayMarked` under `sequential()`. The clock is injected (`clock:`), which is how the 21-case test suite exists.
+Semantics are documented on the class. Summary: a streak is consecutive civil days each of which is a workout or a marked rest day; it increments once per *training* day; rest days bridge without incrementing; a lapse > 1 day reads as 0. Rest allowance is `kRestDaysPerWeek` per ISO Monday week. All day math goes through `domain/streak_rules.dart` (`civilDaysBetween` projects onto UTC — DST-safe). `markRestDay` refuses when there is no live streak, when a workout was already logged today, or when a rest was already marked today; it writes its same-day guard *before* decrementing. `StreakBloc` runs `StreakUpdated`/`RestDayMarked` under `sequential()`. `updateStreak(on:)` credits a specific civil day (a finished draft passes its start date, A2-03); `canMarkRestDay()` is the single rule behind both the guard and the Home button. The clock is injected (`clock:`), which is how the 30-case test suite exists.
 
 ### 6.4 Timer BLoCs
 Both `WorkoutTimerBloc` and `RestTimerBloc` use `Stream.periodic(Duration(seconds: 1))` piped back into `add()` (self-feeding event loop) rather than a raw `Timer.periodic` mutating state directly — keeps all state transitions inside BLoC's `on<Event>` handlers. Both cancel their `StreamSubscription` on `close()` to avoid leaking ticks into a disposed BLoC. `RestTimerBloc` additionally tracks `totalDuration` separately from the ticking `seconds` remaining, so a paused-then-resumed timer's circular progress ring keeps the original denominator instead of resetting to the resumed remaining time.
@@ -303,7 +303,7 @@ All theme data is defined inline as one large `ThemeData` literal in `main.dart`
 ## 7. Current Project State
 
 ### 7.1 Working and tested
-- Everything in §4, plus draft persistence/resume, edit and delete. 39 unit/bloc tests + 1 on-device integration test; `flutter analyze` clean.
+- Everything in §4, plus draft persistence/resume, edit and delete. 105 unit/widget tests (see `AUDIT_2.md` §5 for the breakdown) + 1 on-device integration test per platform; `flutter analyze` clean.
 - Save failures are recoverable (remove the offending set/exercise, retry). Load failures render `LoadErrorView`, never the empty state. Bloc errors are logged via `AppBlocObserver`.
 
 ### 7.2 Known gaps / next steps

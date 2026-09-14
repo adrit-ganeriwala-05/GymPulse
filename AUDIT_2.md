@@ -85,7 +85,7 @@ Nothing Critical. The High is a data-corruption path on retry after a failed sav
 - same day as, or before, the last workout day → no-op (already counted / historical);
 - alive iff `civilDaysBetween(lastStreakDay, day) <= 1` — negative gaps are allowed: if `lastStreakDay` is *after* the day being credited, every day between the last workout and `lastStreakDay` is a rest day that was itself verified alive when marked, so the chain through `day` is continuous;
 - `last_workout_date = day`; `last_streak_day = max(existing, day)` — never moved backwards.
-Worked example (the brief's "mark a rest day, then finish yesterday's draft"): rest today, last workout 2 days ago, draft dated yesterday → count +1, `last_workout = yesterday`, `last_streak_day = today`. Correct: trained, trained, rested.
+Worked example (the brief's "mark a rest day, then finish yesterday's draft"). Note the literal version — rest *today* with the last credited workout two days ago — is unreachable: `markRestDay` refuses a gap of 2. The reachable chain is Mon train, Tue rest, Wed rest, then on Wed finish Tuesday's draft → count 2, `last_workout = Tue`, `last_streak_day = Wed`, both tokens stay burned. Correct: trained, trained, rested. (My first draft of this test used the unreachable version and the datasource refused it — filed here so the next reader does not repeat it.)
 
 **Blast radius** — streak interface/impl/datasource, `UpdateStreak`, `WorkoutBloc`, fakes. `StreakBloc.StreakUpdated` (unused by any screen) keeps today. Overrule if you want the streak credited to the *finish* day instead — then the row date should move too.
 
@@ -130,7 +130,7 @@ Everything else asserts a behaviour that a plausible regression would break; the
 | Edit while a draft is open | Sound. Edit state has `editing != null`; every mutation skips `_persist`; `WorkoutElapsedUpdated` returns early; Finish → `updateWorkout` on the edited id. The draft row is untouched and the banner shows it after `go('/')` (`didPopNext`). Pinned by existing bloc tests + `router_test` "finishing…". |
 | Resume yesterday's draft, finish | **A2-03** (fixed). Date = start day; streak now credited to the same day. |
 | Delete the workout an edit is open on | Unreachable: the edit route sits above History in a single Navigator; leaving edit pops through the confirm dialog to Home. If it ever became reachable, `updateWorkout` is `INSERT OR REPLACE` and would resurrect the row — noted. |
-| Mark rest day, then finish yesterday's draft | Was: rest token burned **and** streak incremented for today (train today = allowed after rest). Now: streak credited to yesterday, `last_streak_day` stays today, rest token stays burned. See A2-03 worked example; datasource test "backdated workout after a rest day". |
+| Mark rest day, then finish yesterday's draft | Only reachable when the streak is already bridged by rest days (see A2-03 worked example). Was: rest token burned **and** streak incremented for today. Now: streak credited to yesterday, `last_streak_day` stays today, tokens stay burned. Datasource test "backdated workout inside a rest-bridged chain". |
 | Draft across DST / timezone change | Sound. Dates are stored as local ISO **without offset** and parsed back as local, so the civil day the user saw is preserved across a zone change; elapsed is state, not wall-clock; the only wall-clock derivation is the banner's "started N ago" (cosmetic, A2-06). |
 
 ---
@@ -177,6 +177,26 @@ Where they disagree the code wins; each is a stale claim, not a code bug.
 
 ---
 
-## 5. Verification
+## 5. Verification (executed, not asserted)
 
-Filled in at the end of the round — see the bottom of this file.
+- `flutter analyze` → `No issues found!`
+- `flutter test` → **`+105: All tests passed!`** (was 90; −1 placeholder, +16)
+  - datasources **42** (streak 29 · workout on real SQLite 13)
+  - repositories **3** · domain stats **8**
+  - blocs **25** (Workout 13 · WorkoutTimer 8 · RestTimer 4)
+  - screens **19** (Active 8 · Home 6 · History 2 · Onboarding 2 · Calendar 1)
+  - router **3** · widgets **2** · units/settings **3**
+- Android emulator (Pixel 9 Pro XL, Android 17), `integration_test/app_flow_test.dart` from a seeded v1 DB → `00:27 +1: All tests passed!`
+- iOS simulator (iPhone 17 Pro, iOS 26.3), same file → `00:30 +1: All tests passed!`
+- One run per platform, at the end, after all four fix commits.
+
+**Commits (severity order, one per cluster):** `b0e31cf` audit + confirmation tests · `d11e187` A2-01/04 timer · `628e16f` A2-02/03 streak · `8100ebc` A2-05/06 Home · docs.
+
+## 6. Still open, unverified, or judgment calls
+
+- **A2-03 policy** — the streak is now credited to the workout's *start* day. If you would rather credit the finish day, the row's date should move with it; say so and it is a two-line change in `_toWorkout`/`_onFinished`.
+- **A2-07 DST tests** are meaningful only on a machine in a DST zone (this one is). A UTC CI would not catch a regression of BUG-03. Not fixable in-process.
+- **A2-08** is filed, not fixed: no constraint enforces one draft / the `status` domain, and a `getDraft()` read failure still starts a fresh session silently. Both need a v4 schema step or a design decision.
+- **Rest-sheet auto-close** still has no widget test (bloc transition is tested).
+- **Not device-verified this round:** the A2-01 retry path and the A2-02 button change were verified by widget tests with real blocs/datasource, not by injecting a disk failure on a device. The device suites cover the unchanged happy path.
+- **Spend** — I have no console access from this session; the number below is a token-volume estimate. Raw estimate for round 4 ≈ **$22** (two device builds, ~30 tool calls, ~3k lines read). Applying the ~40 % over-estimate you measured on previous rounds → **≈ $15**. Cumulative across all rounds by the same method: ≈ $134 raw / ≈ $95 calibrated. Please read the real figure from the console; the $85 stop was not approached.
