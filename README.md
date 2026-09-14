@@ -8,6 +8,7 @@ A clean, minimal workout tracking app built with Flutter.
 - **Active workout session** — live workout timer, rest timer between sets, and exercise log
 - **Draft persistence** — an in-progress session is saved on every change and survives backgrounding, navigation and process death; resume it from Home with the stopwatch exactly where it was
 - **Edit and delete** — long-press any workout in History to edit it in place or delete it
+- **Exercise progress** — tap an exercise in History for its top set per training day and personal record
 - **Streak tracking** — daily workout streak with two rest-day tokens per week
 - **Workout history** — browse past workouts with summary cards
 - **Calendar view** — visualize workout days on a monthly calendar
@@ -56,7 +57,7 @@ flutter run
 
 ```bash
 flutter analyze                                   # zero issues
-flutter test                                      # 106 unit + widget tests
+flutter test                                      # 141 unit + widget tests
 flutter test integration_test/app_flow_test.dart -d <device>   # full flow on a device, from a seeded v1 database
 ```
 
