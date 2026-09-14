@@ -64,141 +64,62 @@ The unit suite runs the real datasource against real SQLite (`sqflite_common_ffi
 
 ## Bugs we found, and how we fixed them
 
-Each one is written as what a user would have seen, then what we changed. The rule
-we worked to: a bug wasn't real until we could reproduce it, and a fix wasn't done
-until we'd run it on a real phone.
+What the bug looked like to a user, then what we changed. Nothing counted as a bug
+until we could reproduce it, and no fix counted as done until it ran on a real phone.
 
 ### Your data was wrong or at risk
 
-**Switching kg to lbs silently rewrote your history.**
-You log a 100 kg bench press. Later you flip the unit switch to pounds. Every past
-workout now says "100 lbs" — the same number with a different label stuck on it. A
-100 kg lift had just been restated as roughly 45 kg. Flip it back and it says kg
-again. Nothing was ever converted.
-*Fix:* the app now stores every weight in kilograms, always, and converts only at
-the moment something is shown on screen or typed in. The stored number never
-changes when you flip the switch — only the label and the displayed value do.
+- **Switching kg to lbs relabelled your history instead of converting it — a 100 kg lift suddenly read as 100 lbs.**  
+  *Fix:* every weight is stored in kilograms and converted only when it's shown or typed, so flipping the switch changes the display and never the stored number.
 
-**One bad number could lock an entire workout out of being saved.**
-Typing something the app couldn't make sense of in the weight field produced a value
-that the database refused to store. The save failed, and the screen that appeared
-afterwards gave you no way to go back and correct the entry. The workout was stuck:
-unable to save, unable to edit, gone as soon as you left.
-*Fix:* input is checked for meaning, not just for "is this a number" — no zero or
-negative reps, no impossible weights — and the error appears under the field as you
-type. If a save does fail, you land back on your workout with buttons to delete the
-offending set or exercise and try again.
+- **One unparseable number in the weight field could lock an entire workout out of being saved, with no way back to correct it.**  
+  *Fix:* input is validated for meaning as you type, and a failed save now returns you to your workout with buttons to remove the offending set and retry.
 
-**Deleting a workout left its exercises behind.**
-The database was supposed to clean up a workout's exercises and sets automatically
-when the workout was deleted. The setting that turns that behaviour on was being
-applied at a moment when the database ignores it, so it never actually took effect.
-Deleted workouts were leaving orphaned data behind, invisibly.
-*Fix:* the setting is now applied every time the database is opened, at the one
-point where it works. Deletes clean up after themselves, and a test proves it
-against a real database rather than assuming it.
+- **Deleting a workout left its exercises and sets behind in the database.**  
+  *Fix:* the cleanup setting is applied at the one moment the database actually honours it, and a test proves deletes now cascade against a real database.
 
-**The next app update would have wiped everyone's history.**
-The database had no upgrade path written. The moment we changed its structure — which
-any new feature would require — every existing install would have crashed on launch
-or lost its data.
-*Fix:* an upgrade path that applies each change in order, so someone updating from a
-very old version gets every step applied one after another. Tests build genuinely old
-database files and upgrade them, checking the workouts inside survive intact.
+- **The next change to the database structure would have crashed or wiped every existing install.**  
+  *Fix:* an upgrade path that applies each change in order, tested by building genuinely old database files and walking them forward with the data intact.
 
-**A late-night workout was filed under the wrong day.**
-Start at 11:50 PM, finish at 12:20 AM, and the workout was recorded as happening the
-next day — because the date was stamped when you pressed Finish, not when you started.
-*Fix:* a workout is dated from when you started it, and your streak is credited to
-that same day.
+- **A workout started at 11:50 PM was filed under the next day, because the date was stamped when you pressed Finish.**  
+  *Fix:* a workout is dated from when you started it, and the streak is credited to that same day.
 
 ### The streak was lying to you
 
-**The streak broke once a year, on the day the clocks changed.**
-The app worked out "did I train yesterday?" by measuring the time between two days and
-dividing by 24 hours. On the spring clock change, a day is only 23 hours long. The
-maths came out as "less than one day", the app decided yesterday was actually today,
-and streaks broke for anyone training that weekend.
-*Fix:* the app now counts calendar days directly instead of measuring elapsed hours,
-so a short day still counts as one day. The tests for this deliberately pretend to run
-in a timezone that has daylight saving, and we checked they genuinely fail against the
-old code — a test for a timezone bug is worthless if it only runs somewhere without
-one.
+- **Streaks broke once a year on the daylight-saving changeover, because that day is 23 hours long and the app measured elapsed hours instead of counting days.**  
+  *Fix:* calendar days are counted directly, so a short day still counts as one — and the tests pretend to run in a daylight-saving timezone, verified to genuinely fail against the old code.
 
-**Rest days and workouts were being recorded in the same place.**
-The app kept a single note saying "something happened on this day" for both training
-and rest. It therefore couldn't answer "have I already trained today?" — so it would
-let you spend one of your two weekly rest days on a day you'd already been to the gym,
-and let you claim a rest day before you had any streak to protect.
-*Fix:* two separate records — one for the days you trained, one for the days your
-streak stayed alive — so each question has an answer.
+- **Workouts and rest days were recorded in the same place, so the app couldn't tell whether you'd already trained today.**  
+  *Fix:* two separate records — days you trained, and days your streak stayed alive — so each question has its own answer.
 
-**Tapping "Mark Rest Day" twice quickly used up both of your rest days.**
-Two taps in the same instant both read "2 remaining" before either had written its
-result, so both wrote "1". One tap, two days gone.
-*Fix:* those actions now queue up and run one at a time, and the underlying code
-records the day first so even an unexpected double-tap can only count once.
+- **Tapping "Mark Rest Day" twice quickly spent both of your weekly rest days at once.**  
+  *Fix:* those actions queue and run one at a time, and the day is recorded before the count is reduced, so a double-tap can only ever count once.
 
-**Your weekly rest days reset on a random day.**
-The "week" was measured as the last seven days from whenever you'd last opened the
-app, so it drifted. Leave the app for eight days and you got an eight-day week.
-*Fix:* weeks run Monday to Sunday, from the calendar.
+- **Your weekly rest-day allowance reset on a drifting schedule — leave the app for eight days and you got an eight-day week.**  
+  *Fix:* weeks run Monday to Sunday, taken from the calendar.
 
-**The "Mark Rest Day" button sometimes did nothing.**
-After taking a rest day, the button stayed on screen offering another one. Tapping it
-had no effect, with no explanation — the button and the rule behind it were each
-working off different information.
-*Fix:* the button now asks the rule itself whether the tap would work, and hides
-itself when it wouldn't. One source of truth instead of two.
+- **The "Mark Rest Day" button stayed on screen after you'd taken one, and tapping it silently did nothing.**  
+  *Fix:* the button asks the rule itself whether the tap would work and hides when it wouldn't, so there's one source of truth instead of two.
 
 ### Timers, navigation, and things that only broke on a real phone
 
-**Losing an in-progress workout.**
-Answer a phone call, get distracted, or have the phone close the app in the
-background, and everything you'd logged that session was gone. Pressing back did the
-same thing.
-*Fix:* the session is written to storage after every single change, so there's nothing
-to lose — no matter how the app closes. Home offers to resume it, with the stopwatch
-picking up at exactly the time it stopped at rather than counting the hours you were
-away, and paused if it was paused.
+- **A phone call, a background app kill, or the back button lost everything you'd logged that session.**  
+  *Fix:* the session is saved after every change, so Home can offer to resume it — stopwatch picking up where it stopped, not counting the hours you were away, and still paused if you'd paused it.
 
-**A failed save could record your workout as lasting zero minutes.**
-The clock could only report its time while it was actively running; asked while paused,
-it answered "zero". That didn't matter for years. Then three separate features started
-relying on it: saving stopped the clock before writing to the database, editing an old
-workout opened with the clock paused, and the auto-save recorded whatever the clock last
-said. Put together: if a save failed and you retried, your 25-minute workout saved as
-0:00.
-*Fix:* the clock reports its time whether running or paused, and saving no longer stops
-it until the save has actually succeeded — so a retry still has your real time. The
-wider lesson, which is in our notes: the individual pieces were each fine and each
-tested. Nobody had tested them *together*, because the assumption they shared had never
-been written down.
+- **A failed save followed by a retry recorded your 25-minute workout as 0:00.**  
+  *Fix:* the clock now reports its time whether running or paused, and saving doesn't stop it until the save has actually succeeded — the three features that each relied on the old behaviour were fine alone, and only broke together.
 
-**On Android, the back gesture quit the app mid-workout.**
-Swiping back from an active session closed GymPulse entirely instead of returning to
-Home. This never happened on iPhone, which has no system back gesture.
-*Fix:* a change to how screens are stacked, so the gesture returns you to Home and your
-session is safely saved as a draft, with a message telling you so.
+- **On Android, the back gesture quit the app mid-workout instead of returning to Home. iPhone never showed this.**  
+  *Fix:* changed how screens are stacked, so the gesture returns you to Home with your session safely saved and a message saying so.
 
-**Things that only a real device revealed.** Text overflowing off the bottom of the
-onboarding screens while the keyboard was sliding away; the Finish button floating up
-and covering the confirm tick when the keyboard opened; the rest timer sheet appearing
-as an empty dark panel; tapping a workout card on Home doing nothing at all. None of
-these could be seen in automated tests — they were all found by running the app on a
-phone, which is why there's now a test that drives the real app end to end on both
-Android and iPhone.
+- **Onboarding text overflowed the screen, the Finish button covered the confirm tick, the rest timer opened as an empty dark panel, and tapping a workout card on Home did nothing.**  
+  *Fix:* all four were invisible to automated tests and found by running the app on a phone — there's now a test that drives the real app end to end on both Android and iPhone.
 
-**The app fetched its fonts from the internet on first launch** — in an app whose whole
-premise is working offline. On a plane or with no signal, the text rendered in a fallback
-font.
-*Fix:* the fonts ship inside the app.
+- **The app downloaded its fonts from the internet on first launch, in an app built to work offline.**  
+  *Fix:* the fonts ship inside the app.
 
 ### Things we checked that turned out to be fine
 
-Not every suspicion was real. The first-launch screen's guard was correct as written.
-The database reads more slowly than it theoretically could, but at the scale one person
-generates — a few hundred workouts — it's imperceptible, so we left it alone and noted
-where the limit is. And editing a workout repeatedly does not gradually round your
-weights: we checked the stored numbers are identical, to the last decimal, after two
-round trips.
+- **The first-launch guard was suspected of using a stale value.** It reads the current one correctly; no change needed.
+- **The database reads less efficiently than it theoretically could.** At the scale one person generates it's imperceptible, so we left it and noted where the limit would be.
+- **Editing a workout repeatedly was suspected of rounding your weights.** Stored values are identical to the last decimal after two round trips.
