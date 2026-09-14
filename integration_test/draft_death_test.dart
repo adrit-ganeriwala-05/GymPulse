@@ -10,7 +10,7 @@ import 'package:sqflite/sqflite.dart';
 /// integration_test/...` reinstalls the APK on EVERY run and wipes app data,
 /// so this cannot prove persistence under the test harness (observed: run 2
 /// still saw phase 1). The authoritative check is a real debug build driven
-/// by adb (`am force-stop`, relaunch) — see FIXES.md round 3. Kept because
+/// by adb (`am force-stop`, relaunch). Kept because
 /// phase 1 alone still exercises the pause+checkpoint path on device.
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
